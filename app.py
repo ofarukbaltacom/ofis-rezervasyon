@@ -6,6 +6,8 @@ import io
 
 import os
 
+import base64
+
 from datetime import datetime
 
 # Sayfa Konfigürasyonu
@@ -132,8 +134,6 @@ def to_excel(df):
 
 def gun_tesis_dolu_sayisi(tarih, tesis_adi):
 
-    """Tüm kayıtları tarayarak ilgili gün ve tesisteki toplam dolu sayısını bulur"""
-
     toplam = 0
 
     for kayit in VERITABANI:
@@ -153,6 +153,18 @@ def gun_tesis_dolu_sayisi(tarih, tesis_adi):
 if 'admin_logged_in' not in st.session_state:
 
     st.session_state.admin_logged_in = False
+
+# --- SÜRPRİZ KUTLAMA POP-UP DIALOG ---
+
+@st.dialog("👑 ÖZEL REZERVASYON ŞAMPİYONU!")
+
+def saka_popup(isim):
+
+    st.image("https://raw.githubusercontent.com/streamlit/streamlit/main/docs/static/logo.png", caption="") # Varsayılan görsel yeri
+
+    st.markdown(f"### 👑 Tebrikler Sayın **{isim}**!\nEylül ayının en hızlı ve neşeli rezervasyon yapan çalışanı seçildiniz! 🎉")
+
+    st.info("Harika bir Eylül ayı geçirmeniz dileğiyle! 🎈")
 
 # --- SIDEBAR MENÜ ---
 
@@ -308,7 +320,19 @@ if sayfa == "📝 Eylül Ayı Rezervasyon Formu":
 
                 verileri_kaydet(yeni_satir)
 
+                # --- KUTLAMA VE SÜRPRİZ FOTOĞRAF ---
+
                 st.balloons()
+
+                # Şakayı sadece belirli bir isme/sicile yapmak isterseniz:
+
+                # if "arkadaşınızın_adı" in ad_soyad.lower():
+
+                #     saka_popup(ad_soyad)
+
+                # Herkese göstermek isterseniz:
+
+                saka_popup(ad_soyad)
 
                 st.success(f"✅ Sayın **{ad_soyad}**, Eylül ayı rezervasyon formunuz başarıyla tek satır olarak kaydedildi!")
 
@@ -439,3 +463,4 @@ elif sayfa == "⚙️ Yönetim Dashboard'u":
         else:
 
             st.warning("Henüz sistemde kayıtlı bir rezervasyon verisi bulunmamaktadır.")
+ 
