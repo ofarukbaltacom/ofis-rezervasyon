@@ -72,7 +72,7 @@ EYLUL_HAFTALARI = {
 
 # ==============================================================================
 
-# 🚀 TÜM KULLANICILAR İÇİN ORTAK MERKEZİ VERİTABANI HAFIZASI
+# 🚀 ORTAK MERKEZİ VERİTABANI HAFIZASI
 
 # ==============================================================================
 
@@ -80,7 +80,7 @@ EYLUL_HAFTALARI = {
 
 def get_global_database():
 
-    """Tüm kullanıcılar ve sekmeler arasında anlık paylaşılan merkezi liste"""
+    """Tüm kullanıcılar ve sekmeler arasında paylaşılan canlı veritabanı"""
 
     if os.path.exists(DATA_FILE):
 
@@ -96,17 +96,25 @@ def get_global_database():
 
     return []
 
-# Anlık Ortak Veri Listesi
-
 VERITABANI = get_global_database()
 
-def verileri_kaydet(yeni_kayitlar):
+def verileri_kaydet(yeni_kayit_satiri):
 
-    VERITABANI.extend(yeni_kayitlar)
+    VERITABANI.append(yeni_kayit_satiri)
 
     try:
 
-        df = pd.DataFrame(VERITABANI)
+        # Excel ve CSV kaydı için iç detay listesini çıkararak kaydet
+
+        temiz_liste = []
+
+        for kayit in VERITABANI:
+
+            temiz_kayit = {k: v for k, v in kayit.items() if k != "Secim_Detaylari"}
+
+            temiz_liste.append(temiz_kayit)
+
+        df = pd.DataFrame(temiz_liste)
 
         df.to_csv(DATA_FILE, index=False, encoding='utf-8-sig')
 
@@ -126,7 +134,23 @@ def to_excel(df):
 
 def gun_tesis_dolu_sayisi(tarih, tesis_adi):
 
-    return sum(1 for r in VERITABANI if r.get("Tarih") == tarih and r.get("Tesis") == tesis_adi)
+    """Tüm kayıtları tarayarak ilgili gün ve tesisteki toplam dolu sayısını bulur"""
+
+    toplam = 0
+
+    for kayit in VERITABANI:
+
+        detaylar = kayit.get("Secim_Detaylari", [])
+
+        if isinstance(detaylar, list):
+
+            for d in detaylar:
+
+                if d.get("Tarih") == tarih and d.get("Tesis") == tesis_adi:
+
+                    toplam += 1
+
+    return toplam
 
 if 'admin_logged_in' not in st.session_state:
 
@@ -246,39 +270,53 @@ if sayfa == "📝 Eylül Ayı Rezervasyon Formu":
 
             if not kural_ihlali:
 
-                yeni_kayitlar = []
+                # TEK SATIRLIK VERİ MİMARİSİ OLUŞTURMA
 
-                for hafta, gun_listesi in secimler.items():
+                yeni_satir = {
 
-                    for tarih, tesis in gun_listesi:
+                    "Sicil": sicil.strip(),
 
-                        yeni_kayitlar.append({
+                    "Ad Soyad": ad_soyad.strip(),
 
-                            "Sicil": sicil.strip(),
+                    "Müdürlük": mudurluk.strip(),
 
-                            "Ad Soyad": ad_soyad.strip(),
+                    "Ünvan": unvan.strip()
 
-                            "Müdürlük": mudurluk.strip(),
+                }
 
-                            "Ünvan": unvan.strip(),
+                tum_secim_detaylari = []
 
-                            "Hafta": hafta,
+                for hafta_adi in EYLUL_HAFTALARI.keys():
 
-                            "Tarih": tarih,
+                    hafta_secimleri = secimler.get(hafta_adi, [])
 
-                            "Tesis": tesis,
+                    if hafta_secimleri:
 
-                            "Kayıt Tarihi": datetime.now().strftime("%Y-%m-%d %H:%M")
+                        metin_listesi = []
 
-                        })
+                        for tarih, tesis in hafta_secimleri:
+
+                            metin_listesi.append(f"{tarih} ({tesis})")
+
+                            tum_secim_detaylari.append({"Tarih": tarih, "Tesis": tesis})
+
+                        yeni_satir[hafta_adi] = " | ".join(metin_listesi)
+
+                    else:
+
+                        yeni_satir[hafta_adi] = "-"
+
+                yeni_satir["Kayıt Tarihi"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+                yeni_satir["Secim_Detaylari"] = tum_secim_detaylari
 
                 # Ortak Veritabanına Anında Kaydet
 
-                verileri_kaydet(yeni_kayitlar)
+                verileri_kaydet(yeni_satir)
 
                 st.balloons()
 
-                st.success(f"✅ Sayın **{ad_soyad}**, Eylül ayı için toplam **{len(yeni_kayitlar)} günlük** rezervasyon kaydınız başarıyla sistem veritabanına eklendi! Yönetim panelinden anında görebilirsiniz.")
+                st.success(f"✅ Sayın **{ad_soyad}**, Eylül ayı rezervasyon formunuz başarıyla tek satır olarak kaydedildi!")
 
 # ==============================================================================
 
@@ -346,11 +384,15 @@ elif sayfa == "⚙️ Yönetim Dashboard'u":
 
         st.divider()
 
-        st.subheader("📥 Tüm Eylül Rezervasyon Verileri")
+        st.subheader("📥 Tüm Eylül Rezervasyon Verileri (Kişi Başı Tek Satır)")
 
         if len(VERITABANI) > 0:
 
-            df_rez = pd.DataFrame(VERITABANI)
+            # Görünüm için iç detay objelerini filtreleyip tabloya bas
+
+            gosterim_listesi = [{k: v for k, v in row.items() if k != "Secim_Detaylari"} for row in VERITABANI]
+
+            df_rez = pd.DataFrame(gosterim_listesi)
 
             arama_metni = st.text_input("Arama Yap (Sicil, İsim veya Müdürlük)", placeholder="Örn: Ahmet veya 12345")
 
@@ -404,4 +446,4 @@ elif sayfa == "⚙️ Yönetim Dashboard'u":
 
         else:
 
-            st.warning("⚠️ Henüz sistemde kayıtlı bir rezervasyon verisi bulunmamaktadır. Form sayfasından bir rezervasyon yapıldığında veriler anında burada görünecektir.")
+            st.warning("⚠️ Henüz sistemde kayıtlı bir rezervasyon verisi bulunmamaktadır.)
