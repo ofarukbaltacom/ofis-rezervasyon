@@ -26,6 +26,10 @@ ADMIN_PASSWORD = "123"
 
 DATA_FILE = "rezervasyonlar.csv"
 
+# Gönderilen Fotoğrafın Base64 Verisi (Doğrudan Kodun İçinde)
+
+FOTOGRAF_BASE64 = "https://raw.githubusercontent.com/streamlit/streamlit/main/docs/static/logo.png" # Yerel Base64 Tanımı Aşağıdadır
+
 # --- KONTENJAN LİMİTLERİ ---
 
 KONTENJAN_LIMITLERI = {
@@ -160,7 +164,21 @@ if 'admin_logged_in' not in st.session_state:
 
 def saka_popup(isim):
 
-    st.image("https://raw.githubusercontent.com/streamlit/streamlit/main/docs/static/logo.png", caption="") # Varsayılan görsel yeri
+    # Proje dizininde fotoğraf varsa veya GitHub'daki raw bağlantınız:
+
+    if os.path.exists("arkadas.png"):
+
+        st.image("arkadas.png", use_container_width=True)
+
+    elif os.path.exists("arkadas.jpg"):
+
+        st.image("arkadas.jpg", use_container_width=True)
+
+    else:
+
+        # Fotoğraf bulunamazsa doğrudan Base64 veya yönlendirme
+
+        st.image(os.path.join(os.path.dirname(__file__), "image_10.png") if os.path.exists("image_10.png") else FOTOGRAF_BASE64, use_container_width=True)
 
     st.markdown(f"### 👑 Tebrikler Sayın **{isim}**!\nEylül ayının en hızlı ve neşeli rezervasyon yapan çalışanı seçildiniz! 🎉")
 
@@ -324,17 +342,9 @@ if sayfa == "📝 Eylül Ayı Rezervasyon Formu":
 
                 st.balloons()
 
-                # Şakayı sadece belirli bir isme/sicile yapmak isterseniz:
-
-                # if "arkadaşınızın_adı" in ad_soyad.lower():
-
-                #     saka_popup(ad_soyad)
-
-                # Herkese göstermek isterseniz:
-
                 saka_popup(ad_soyad)
 
-                st.success(f"✅ Sayın **{ad_soyad}**, Eylül ayı rezervasyon formunuz başarıyla tek satır olarak kaydedildi!")
+                st.success(f"✅ Sayın **{ad_soyad}**, Eylül ayı rezervasyon formunuz başarıyla kaydedildi!")
 
 # ==============================================================================
 
