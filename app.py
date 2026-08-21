@@ -72,7 +72,7 @@ EYLUL_HAFTALARI = {
 
 # ==============================================================================
 
-# 🚀 ORTAK MERKEZİ VERİTABANI HAFIZASI
+# ORTAK MERKEZİ VERİTABANI HAFIZASI
 
 # ==============================================================================
 
@@ -103,8 +103,6 @@ def verileri_kaydet(yeni_kayit_satiri):
     VERITABANI.append(yeni_kayit_satiri)
 
     try:
-
-        # Excel ve CSV kaydı için iç detay listesini çıkararak kaydet
 
         temiz_liste = []
 
@@ -270,8 +268,6 @@ if sayfa == "📝 Eylül Ayı Rezervasyon Formu":
 
             if not kural_ihlali:
 
-                # TEK SATIRLIK VERİ MİMARİSİ OLUŞTURMA
-
                 yeni_satir = {
 
                     "Sicil": sicil.strip(),
@@ -309,8 +305,6 @@ if sayfa == "📝 Eylül Ayı Rezervasyon Formu":
                 yeni_satir["Kayıt Tarihi"] = datetime.now().strftime("%Y-%m-%d %H:%M")
 
                 yeni_satir["Secim_Detaylari"] = tum_secim_detaylari
-
-                # Ortak Veritabanına Anında Kaydet
 
                 verileri_kaydet(yeni_satir)
 
@@ -388,8 +382,6 @@ elif sayfa == "⚙️ Yönetim Dashboard'u":
 
         if len(VERITABANI) > 0:
 
-            # Görünüm için iç detay objelerini filtreleyip tabloya bas
-
             gosterim_listesi = [{k: v for k, v in row.items() if k != "Secim_Detaylari"} for row in VERITABANI]
 
             df_rez = pd.DataFrame(gosterim_listesi)
@@ -446,4 +438,4 @@ elif sayfa == "⚙️ Yönetim Dashboard'u":
 
         else:
 
-            st.warning("⚠️ Henüz sistemde kayıtlı bir rezervasyon verisi bulunmamaktadır.)
+            st.warning("Henüz sistemde kayıtlı bir rezervasyon verisi bulunmamaktadır.")
