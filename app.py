@@ -100,69 +100,6 @@ EYLUL_HAFTALARI = {
 ]
 }
 
-# ==============================================================================
-# VERİTABANI BAĞLANTISI VE KALICI SAKLAMA (SQLITE)
-# ==============================================================================
-def init_db():
-conn = sqlite3.connect(DB_FILE, check_same_thread=False)
-cursor = conn.cursor()
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS rezervasyonlar (
-id INTEGER PRIMARY KEY AUTOINCREMENT,
-sicil TEXT,
-ad_soyad TEXT,
-baskanlik TEXT,
-mudurluk TEXT,
-unvan TEXT,
-hafta_1 TEXT,
-hafta_2 TEXT,
-hafta_3 TEXT,
-hafta_4 TEXT,
-hafta_5 TEXT,
-kayit_tarihi TEXT,
-secim_detaylari TEXT
-)
-""")
-conn.commit()
-conn.close()
-
-init_db()
-
-def verileri_getir():
-conn = sqlite3.connect(DB_FILE, check_same_thread=False)
-df = pd.read_sql_query("SELECT * FROM rezervasyonlar", conn)
-conn.close()
-return df
-
-def veri_ekle(sicil, ad_soyad, baskanlik, mudurluk, unvan, h1, h2, h3, h4, h5, kayit_tarihi, detaylar_str):
-conn = sqlite3.connect(DB_FILE, check_same_thread=False)
-cursor = conn.cursor()
-cursor.execute("""
-INSERT INTO rezervasyonlar 
-(sicil, ad_soyad, baskanlik, mudurluk, unvan, hafta_1, hafta_2, hafta_3, hafta_4, hafta_5, kayit_tarihi, secim_detaylari)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-""", (sicil, ad_soyad, baskanlik, mudurluk, unvan, h1, h2, h3, h4, h5, kayit_tarihi, detaylar_str))
-conn.commit()
-conn.close()
-
-def gun_tesis_dolu_sayisi(tarih, tesis_adi):
-df = verileri_getir()
-toplam = 0
-if not df.empty and "secim_detaylari" in df.columns:
-arama_terimi = f"{tarih}@{tesis_adi}"
-for d in df["secim_detaylari"].dropna():
-if arama_terimi in d:
-toplam += 1
-return toplam
-
-def to_excel(df):
-output = io.BytesIO()
-with pd.ExcelWriter(output, engine='openpyxl') as writer:
-df.to_excel(writer, index=False, sheet_name='Eylul_Rezervasyonlari')
-return output.getvalue()
-
-if 'admin_logged_in' not in st.session_state:
-st.session_state.admin_logged_in = False
 
 # --- SÜRPRİZ KUTLAMA DIALOG ---
 @st.dialog("👑 ÖZEL REZERVASYON ŞAMPİYONU!")
