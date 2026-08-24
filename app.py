@@ -239,7 +239,7 @@ if sayfa == "📝 Eylül Ayı Rezervasyon Formu":
                     
             st.markdown("---")
 
-        submit_btn = st.form_submit_button("Eylul Ayı Rezervasyonunu Onayla", use_container_width=True)
+        submit_btn = st.form_submit_button("Eylül Ayı Rezervasyonunu Onayla", use_container_width=True)
 
     if submit_btn:
         if baskanlik == "Başkanlık Seçiniz..." or mudurluk == "Müdürlük Seçiniz...":
