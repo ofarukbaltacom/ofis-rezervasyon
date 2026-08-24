@@ -607,7 +607,6 @@ elif sayfa == "⚙️ Yönetim Dashboard'u":
             df_goster = df_rez.drop(columns=['secim_detaylari'], errors='ignore')
  
 arama_metni = st.text_input("Arama Yap (Sicil, İsim, Başkanlık veya Müdürlük)", placeholder="Örn: Ahmet, 12345 veya GELİR")
-
             if arama_metni:
                 df_goster = df_goster[
 
