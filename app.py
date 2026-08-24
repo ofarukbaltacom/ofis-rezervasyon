@@ -609,7 +609,6 @@ elif sayfa == "⚙️ Yönetim Dashboard'u":
 arama_metni = st.text_input("Arama Yap (Sicil, İsim, Başkanlık veya Müdürlük)", placeholder="Örn: Ahmet, 12345 veya GELİR")
 
             if arama_metni:
-
                 df_goster = df_goster[
 
                     df_goster['sicil'].astype(str).str.contains(arama_metni, case=False) |
