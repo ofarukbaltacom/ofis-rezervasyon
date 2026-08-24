@@ -10,7 +10,7 @@ from datetime import datetime
 # SAYFA KONFİGÜRASYONU VE OTURUM CANLI TUTMA (KEEP ALIVE)
 # ==============================================================================
 st.set_page_config(
-    page_title="Uydu Ofis Rezervasyon Portalı",
+    page_title="Turkish Cargo Uydu Ofis Rezervasyon Portalı",
     page_icon="🏢",
     layout="wide"
 )
@@ -182,8 +182,8 @@ sayfa = st.sidebar.radio(
 # ==============================================================================
 # SAYFA 1: KULLANICI REZERVASYON PORTALI
 # ==============================================================================
-if sayfa == "📝 Eylül Ayı Rezervasyon Formu":
-    st.title("🏢 Eylül 2026 Uydu Ofis Kullanım / Rezervasyon Formu")
+if sayfa == "📝Uydu Ofis Rezervasyon Formu":
+    st.title("🏢Turkish Cargo Eylül 2026 Uydu Ofis Kullanım / Rezervasyon Formu")
     st.markdown("Lütfen kişisel bilgilerinizi giriniz ve Eylül ayı için haftalık **en fazla 2 gün** olacak şekilde ofis günlerinizi seçiniz.")
     st.info("💡 **Günlük Kontenjanlar:** Atatürk Havalimanı (30 Kişi) | Libadiye Teknoloji Ofisi (20 Kişi)")
 
