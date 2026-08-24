@@ -10,7 +10,7 @@ from datetime import datetime
 # SAYFA KONFİGÜRASYONU VE OTURUM CANLI TUTMA (KEEP ALIVE)
 # ==============================================================================
 st.set_page_config(
-    page_title="Uydu Ofis Rezervasyon Portalı",
+    page_title="Turkish Cargo Uydu Ofis Rezervasyon Portalı",
     page_icon="🏢",
     layout="wide"
 )
