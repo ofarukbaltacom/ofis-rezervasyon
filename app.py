@@ -99,8 +99,11 @@ EYLUL_HAFTALARI = {
     ]
 }
 
+# Tüm günlerin düz listesi
+TUM_GUNLER = [gun for gunler in EYLUL_HAFTALARI.values() for gun in gunler]
+
 # ==============================================================================
-# VERİTABANI İŞLEMLERİ (REZERVASYON + KONTENJAN YÖNETİMİ)
+# VERİTABANI İŞLEMLERİ
 # ==============================================================================
 def init_db():
     conn = sqlite3.connect(DB_FILE, check_same_thread=False)
@@ -128,6 +131,14 @@ def init_db():
             limit_sayisi INTEGER
         )
     """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS gunluk_kontenjanlar (
+            tarih TEXT,
+            tesis_adi TEXT,
+            limit_sayisi INTEGER,
+            PRIMARY KEY (tarih, tesis_adi)
+        )
+    """)
     cursor.execute("INSERT OR IGNORE INTO kontenjanlar VALUES ('Atatürk Havalimanı', 30)")
     cursor.execute("INSERT OR IGNORE INTO kontenjanlar VALUES ('Libadiye Teknoloji Ofisi', 20)")
     conn.commit()
@@ -149,6 +160,35 @@ def kontenjan_guncelle(tesis_adi, yeni_limit):
     cursor.execute("UPDATE kontenjanlar SET limit_sayisi = ? WHERE tesis_adi = ?", (yeni_limit, tesis_adi))
     conn.commit()
     conn.close()
+
+def gunluk_kontenjan_guncelle(tarih, tesis_adi, yeni_limit):
+    conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO gunluk_kontenjanlar (tarih, tesis_adi, limit_sayisi) 
+        VALUES (?, ?, ?) 
+        ON CONFLICT(tarih, tesis_adi) DO UPDATE SET limit_sayisi = excluded.limit_sayisi
+    """, (tarih, tesis_adi, yeni_limit))
+    conn.commit()
+    conn.close()
+
+def gunluk_kontenjanlari_getir():
+    conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+    cursor = conn.cursor()
+    cursor.execute("SELECT tarih, tesis_adi, limit_sayisi FROM gunluk_kontenjanlar")
+    rows = cursor.fetchall()
+    conn.close()
+    res = {}
+    for r in rows:
+        res[(r[0], r[1])] = r[2]
+    return res
+
+def gun_tesis_limiti_getir(tarih, tesis_adi):
+    gunluk_dict = gunluk_kontenjanlari_getir()
+    if (tarih, tesis_adi) in gunluk_dict:
+        return gunluk_dict[(tarih, tesis_adi)]
+    genel_dict = kontenjanlari_getir()
+    return genel_dict.get(tesis_adi, 30 if tesis_adi == "Atatürk Havalimanı" else 20)
 
 def verileri_getir():
     conn = sqlite3.connect(DB_FILE, check_same_thread=False)
@@ -197,10 +237,10 @@ sayfa = st.sidebar.radio(
 # SAYFA 1: KULLANICI REZERVASYON PORTALI
 # ==============================================================================
 if sayfa == "📝 Eylül Ayı Rezervasyon Formu":
-    current_limits = kontenjanlari_getir()
+    genel_limits = kontenjanlari_getir()
     st.title("🏢 Eylül 2026 Uydu Ofis Kullanım / Rezervasyon Formu")
     st.markdown("Lütfen kişisel bilgilerinizi giriniz ve Eylül ayı için haftalık **en fazla 2 gün** olacak şekilde ofis günlerinizi seçiniz.")
-    st.info(f"💡 **Günlük Kontenjanlar:** Atatürk Havalimanı ({current_limits.get('Atatürk Havalimanı', 30)} Kişi) | Libadiye Teknoloji Ofisi ({current_limits.get('Libadiye Teknoloji Ofisi', 20)} Kişi)")
+    st.info(f"💡 **Genel Kontenjanlar:** Atatürk Havalimanı ({genel_limits.get('Atatürk Havalimanı', 30)} Kişi) | Libadiye Teknoloji Ofisi ({genel_limits.get('Libadiye Teknoloji Ofisi', 20)} Kişi)")
 
     with st.form("aylik_rezervasyon_formu"):
         st.subheader("👤 Kullanıcı Bilgileri")
@@ -234,12 +274,14 @@ if sayfa == "📝 Eylül Ayı Rezervasyon Formu":
             for gun in gunler:
                 c_a, c_l = st.columns(2)
                 
+                limit_ataturk = gun_tesis_limiti_getir(gun, "Atatürk Havalimanı")
                 dolu_ataturk = gun_tesis_dolu_sayisi(gun, "Atatürk Havalimanı")
-                kalan_ataturk = max(0, current_limits.get("Atatürk Havalimanı", 30) - dolu_ataturk)
+                kalan_ataturk = max(0, limit_ataturk - dolu_ataturk)
                 ataturk_label = f"{gun} - Atatürk Havalimanı ({kalan_ataturk} yer kaldı)" if kalan_ataturk > 0 else f"{gun} - Atatürk Havalimanı (⚠️ DOLDU)"
                 
+                limit_libadiye = gun_tesis_limiti_getir(gun, "Libadiye Teknoloji Ofisi")
                 dolu_libadiye = gun_tesis_dolu_sayisi(gun, "Libadiye Teknoloji Ofisi")
-                kalan_libadiye = max(0, current_limits.get("Libadiye Teknoloji Ofisi", 20) - dolu_libadiye)
+                kalan_libadiye = max(0, limit_libadiye - dolu_libadiye)
                 libadiye_label = f"{gun} - Libadiye Ofisi ({kalan_libadiye} yer kaldı)" if kalan_libadiye > 0 else f"{gun} - Libadiye Ofisi (⚠️ DOLDU)"
                 
                 with c_a:
@@ -326,36 +368,57 @@ elif sayfa == "⚙️ Yönetim Dashboard'u":
             st.session_state.admin_logged_in = False
             st.rerun()
 
-        # MANUEL KONTENJAN MÜDAHALE BÖLÜMÜ
-        st.subheader("🛠️ Manuel Kontenjan Limiti Düzenleme")
+        # MANUEL GENEL KONTENJAN MÜDAHALE BÖLÜMÜ
+        st.subheader("🛠️ Genel Kontenjan Limiti Düzenleme")
         limittler = kontenjanlari_getir()
         
         col_k1, col_k2 = st.columns(2)
         with col_k1:
-            yeni_ataturk = st.number_input("Atatürk Havalimanı Kontenjanı", min_value=1, value=limittler.get("Atatürk Havalimanı", 30), step=1)
+            yeni_ataturk = st.number_input("Atatürk Havalimanı (Genel Limit)", min_value=1, value=limittler.get("Atatürk Havalimanı", 30), step=1)
         with col_k2:
-            yeni_libadiye = st.number_input("Libadiye Teknoloji Ofisi Kontenjanı", min_value=1, value=limittler.get("Libadiye Teknoloji Ofisi", 20), step=1)
+            yeni_libadiye = st.number_input("Libadiye Teknoloji Ofisi (Genel Limit)", min_value=1, value=limittler.get("Libadiye Teknoloji Ofisi", 20), step=1)
             
-        if st.button("💾 Kontenjan Limitlerini Güncelle"):
+        if st.button("💾 Genel Kontenjan Limitlerini Güncelle"):
             kontenjan_guncelle("Atatürk Havalimanı", yeni_ataturk)
             kontenjan_guncelle("Libadiye Teknoloji Ofisi", yeni_libadiye)
-            st.success("✅ Kontenjan limitleri başarıyla güncellendi!")
+            st.success("✅ Genel kontenjan limitleri başarıyla güncellendi!")
+            st.rerun()
+
+        st.divider()
+        
+        # MANUEL TARİH BAZLI KONTENJAN MÜDAHALE BÖLÜMÜ
+        st.subheader("📅 Tarih Bazlı Özel Kontenjan Tanımlama")
+        col_t1, col_t2, col_t3 = st.columns(3)
+        with col_t1:
+            secilen_tarih = st.selectbox("Tarih Seçin", options=TUM_GUNLER)
+        with col_t2:
+            secilen_tesis = st.selectbox("Tesis Seçin", options=["Atatürk Havalimanı", "Libadiye Teknoloji Ofisi"])
+        with col_t3:
+            mevcut_limit = gun_tesis_limiti_getir(secilen_tarih, secilen_tesis)
+            ozel_limit = st.number_input(f"Özel Kontenjan Limiti ({secilen_tarih})", min_value=1, value=mevcut_limit, step=1)
+
+        if st.button("📌 Seçili Tarih İçin Kontenjanı Güncelle"):
+            gunluk_kontenjan_guncelle(secilen_tarih, secilen_tesis, ozel_limit)
+            st.success(f"✅ {secilen_tarih} günü için {secilen_tesis} kontenjanı **{ozel_limit}** olarak güncellendi!")
             st.rerun()
 
         st.divider()
         st.subheader("📊 Günlük Kontenjan Doluluk Durumları (Eylul 2026)")
         
-        limittler = kontenjanlari_getir()
         ozet_list = []
         for hafta, gunler in EYLUL_HAFTALARI.items():
             for g in gunler:
+                limit_ataturk = gun_tesis_limiti_getir(g, "Atatürk Havalimanı")
                 d_ataturk = gun_tesis_dolu_sayisi(g, "Atatürk Havalimanı")
+                
+                limit_libadiye = gun_tesis_limiti_getir(g, "Libadiye Teknoloji Ofisi")
                 d_libadiye = gun_tesis_dolu_sayisi(g, "Libadiye Teknoloji Ofisi")
+                
                 ozet_list.append({
                     "Hafta": hafta,
                     "Tarih": g,
-                    f"Atatürk (Dolu/{limittler.get('Atatürk Havalimanı', 30)})": f"{d_ataturk} / {limittler.get('Atatürk Havalimanı', 30)}",
-                    f"Libadiye (Dolu/{limittler.get('Libadiye Teknoloji Ofisi', 20)})": f"{d_libadiye} / {limittler.get('Libadiye Teknoloji Ofisi', 20)}"
+                    "Atatürk (Dolu / Limit)": f"{d_ataturk} / {limit_ataturk}",
+                    "Libadiye (Dolu / Limit)": f"{d_libadiye} / {limit_libadiye}"
                 })
         
         st.dataframe(pd.DataFrame(ozet_list), use_container_width=True)
@@ -397,4 +460,3 @@ elif sayfa == "⚙️ Yönetim Dashboard'u":
                 )
         else:
             st.warning("Henüz sistemde kayıtlı bir rezervasyon verisi bulunmamaktadır.")
-
