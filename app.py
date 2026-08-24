@@ -1,8 +1,3 @@
-[External Message] This email has originated from outside the organization. 
-[Caution] Do not click on any links or open attachments unless you recognize the sender and know that the content is safe. 
-
-
-
 import streamlit as st
 import pandas as pd
 import io
