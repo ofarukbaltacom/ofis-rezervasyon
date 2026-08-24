@@ -99,7 +99,6 @@ EYLUL_HAFTALARI = {
     ]
 }
 
-# Tüm günlerin düz listesi
 TUM_GUNLER = [gun for gunler in EYLUL_HAFTALARI.values() for gun in gunler]
 
 # ==============================================================================
@@ -204,6 +203,20 @@ def veri_ekle(sicil, ad_soyad, baskanlik, mudurluk, unvan, h1, h2, h3, h4, h5, k
         (sicil, ad_soyad, baskanlik, mudurluk, unvan, hafta_1, hafta_2, hafta_3, hafta_4, hafta_5, kayit_tarihi, secim_detaylari)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (sicil, ad_soyad, baskanlik, mudurluk, unvan, h1, h2, h3, h4, h5, kayit_tarihi, detaylar_str))
+    conn.commit()
+    conn.close()
+
+def kayit_sil(rezervasyon_id):
+    conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM rezervasyonlar WHERE id = ?", (rezervasyon_id,))
+    conn.commit()
+    conn.close()
+
+def tum_rezervasyonlari_temizle():
+    conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM rezervasyonlar")
     conn.commit()
     conn.close()
 
@@ -403,7 +416,7 @@ elif sayfa == "⚙️ Yönetim Dashboard'u":
             st.rerun()
 
         st.divider()
-        st.subheader("📊 Günlük Kontenjan Doluluk Durumları (Eylul 2026)")
+        st.subheader("📊 Günlük Kontenjan Doluluk Durumları (Eylül 2026)")
         
         ozet_list = []
         for hafta, gunler in EYLUL_HAFTALARI.items():
@@ -458,5 +471,31 @@ elif sayfa == "⚙️ Yönetim Dashboard'u":
                     mime="text/csv",
                     use_container_width=True
                 )
+
+            # SİLME BÖLÜMÜ (MÜDAHALE ALANI)
+            st.divider()
+            st.subheader("🗑️ Rezervasyon Verisi / Test Kaydı Silme")
+            
+            col_del1, col_del2 = st.columns([2, 1])
+            with col_del1:
+                silinecek_id = st.selectbox(
+                    "Silmek İstediğiniz Kaydın ID Numarasını Seçin:",
+                    options=df_rez['id'].tolist(),
+                    format_func=lambda x: f"ID: {x} | {df_rez[df_rez['id'] == x]['ad_soyad'].values[0]} ({df_rez[df_rez['id'] == x]['sicil'].values[0]})"
+                )
+            with col_del2:
+                st.write("") # Hizalama boşluğu
+                st.write("") 
+                if st.button("❌ Seçili Kaydı Sil", use_container_width=True):
+                    kayit_sil(silinecek_id)
+                    st.success(f"ID {silinecek_id} numaralı kayıt başarıyla silindi ve kontenjan açıldı!")
+                    st.rerun()
+
+            with st.expander("⚠️ Tesis / Test Verilerini Sıfırla (Tüm Kayıtları Sil)"):
+                st.warning("Bu işlem veritabanındaki TÜM kullanıcı rezervasyonlarını kalıcı olarak siler ve kontenjanları sıfırlar!")
+                if st.button("🔥 Tüm Rezervasyon Verilerini Sil"):
+                    tum_rezervasyonlari_temizle()
+                    st.success("Tüm veriler başarıyla temizlendi!")
+                    st.rerun()
         else:
             st.warning("Henüz sistemde kayıtlı bir rezervasyon verisi bulunmamaktadır.")
