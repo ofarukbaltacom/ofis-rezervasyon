@@ -310,7 +310,28 @@ if sayfa == "📝 Eylül Ayı Rezervasyon Formu":
             st.markdown("---")
 
         submit_btn = st.form_submit_button("Eylül Ayı Rezervasyonunu Onayla", use_container_width=True)
-
+# ... Önceki kodlar (Haftalık Gün Seçimleri vb.) ...
+       st.divider()
+       # --- BİLGİLENDİRME VE ONAY KUTUCUĞU ---
+       st.warning("""
+       **Önemli Bilgilendirme ve Uyarı:**
+       Aşağıdaki kurallara ay içinde 3 defa uymayan çalışanlarımızın ilgili ofislere giriş yetkileri kısıtlanacaktır.
+       * Rezervasyon yapıp gitmemek ve gitmediği bilgisini KOPS ile paylaşmamak,
+       * Rezervasyon yaptığı günden farklı günde veya farklı lokasyonu kullanmak.
+       """)
+       onay = st.checkbox("Okudum, onaylıyorum.")
+       submit_btn = st.form_submit_button("Eylül Ayı Rezervasyonunu Onayla", use_container_width=True)
+   if submit_btn:
+       if not onay:
+           st.error("⚠️ Lütfen formu göndermeden önce kural ve bilgilendirme metnini okuyup onaylayınız!")
+       elif baskanlik == "Başkanlık Seçiniz..." or mudurluk == "Müdürlük Seçiniz...":
+           st.error("⚠️ Lütfen listeden geçerli bir Başkanlık ve Müdürlük seçiniz!")
+       elif not (sicil.strip() and ad_soyad.strip() and unvan.strip()):
+           st.error("⚠️ Lütfen Sicil, İsim Soyisim ve Ünvan alanlarını eksiksiz doldurunuz!")
+       elif not secimler:
+           st.error("⚠️ Lütfen en az bir gün için tesis seçimi yapınız!")
+       else:
+           # Kayıt ekleme ve onay işlemleri...
     if submit_btn:
         if baskanlik == "Başkanlık Seçiniz..." or mudurluk == "Müdürlük Seçiniz...":
             st.error("⚠️ Lütfen listeden geçerli bir Başkanlık ve Müdürlük seçiniz!")
