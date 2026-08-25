@@ -262,7 +262,6 @@ if sayfa == "📝 Eylül Ayı Rezervasyon Formu":
         with col_f1:
             sicil = st.text_input("Sicil Bilgisi", placeholder="Örn: 12345")
             ad_soyad = st.text_input("İsim Soyisim", placeholder="Adınızı ve soyadınızı giriniz")
-            unvan = st.text_input("Ünvan", placeholder="Göreviniz / Ünvanınız")
             
         with col_f2:
             baskanlik = st.selectbox(
