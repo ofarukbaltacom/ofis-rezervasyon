@@ -10,7 +10,7 @@ from datetime import datetime
 # SAYFA KONFİGÜRASYONU VE OTURUM CANLI TUTMA (KEEP ALIVE)
 # ==============================================================================
 st.set_page_config(
-    page_title="Turkish Cargo Uydu Ofis Rezervasyon Portalı",
+    page_title="Uydu Ofis Rezervasyon Portalı",
     page_icon="🏢",
     layout="wide"
 )
@@ -28,7 +28,7 @@ components.html(
     width=0,
 )
 
-ADMIN_PASSWORD = "kogm2071"
+ADMIN_PASSWORD = "123"
 DB_FILE = "rezervasyonlar.db"
 
 # ==============================================================================
@@ -256,7 +256,7 @@ if sayfa == "📝 Eylül Ayı Rezervasyon Formu":
     st.info(f"💡 **Genel Kontenjanlar:** Atatürk Havalimanı ({genel_limits.get('Atatürk Havalimanı', 30)} Kişi) | Libadiye Teknoloji Ofisi ({genel_limits.get('Libadiye Teknoloji Ofisi', 20)} Kişi)")
 
     with st.form("aylik_rezervasyon_formu"):
-        st.subheader("👤 Çalışan Bilgileri")
+        st.subheader("👤 Kullanıcı Bilgileri")
         col_f1, col_f2 = st.columns(2)
         
         with col_f1:
@@ -309,31 +309,22 @@ if sayfa == "📝 Eylül Ayı Rezervasyon Formu":
                     
             st.markdown("---")
 
+        # KURAL VE ONAY KUTUCUĞU BÖLÜMÜ
+        st.warning("""
+        Aşağıdaki kurallara ay içinde 3 defa uymayan çalışanlarımızın ilgili ofislere giriş yetkileri kısıtlanacaktır.
+
+        • Rezervasyon yapıp gitmemek ve gitmediği bilgisini KOPS ile paylaşmamak,
+        • Rezervasyon yaptığı günden farklı günde veya farklı lokasyonu kullanmak.
+        """)
+        
+        onay = st.checkbox("Okudum, onaylıyorum.")
+
         submit_btn = st.form_submit_button("Eylül Ayı Rezervasyonunu Onayla", use_container_width=True)
-# ... Önceki kodlar (Haftalık Gün Seçimleri vb.) ...
-       st.divider()
-       # --- BİLGİLENDİRME VE ONAY KUTUCUĞU ---
-       st.warning("""
-       **Önemli Bilgilendirme ve Uyarı:**
-       Aşağıdaki kurallara ay içinde 3 defa uymayan çalışanlarımızın ilgili ofislere giriş yetkileri kısıtlanacaktır.
-       * Rezervasyon yapıp gitmemek ve gitmediği bilgisini KOPS ile paylaşmamak,
-       * Rezervasyon yaptığı günden farklı günde veya farklı lokasyonu kullanmak.
-       """)
-       onay = st.checkbox("Okudum, onaylıyorum.")
-       submit_btn = st.form_submit_button("Eylül Ayı Rezervasyonunu Onayla", use_container_width=True)
-   if submit_btn:
-       if not onay:
-           st.error("⚠️ Lütfen formu göndermeden önce kural ve bilgilendirme metnini okuyup onaylayınız!")
-       elif baskanlik == "Başkanlık Seçiniz..." or mudurluk == "Müdürlük Seçiniz...":
-           st.error("⚠️ Lütfen listeden geçerli bir Başkanlık ve Müdürlük seçiniz!")
-       elif not (sicil.strip() and ad_soyad.strip() and unvan.strip()):
-           st.error("⚠️ Lütfen Sicil, İsim Soyisim ve Ünvan alanlarını eksiksiz doldurunuz!")
-       elif not secimler:
-           st.error("⚠️ Lütfen en az bir gün için tesis seçimi yapınız!")
-       else:
-           # Kayıt ekleme ve onay işlemleri...
+
     if submit_btn:
-        if baskanlik == "Başkanlık Seçiniz..." or mudurluk == "Müdürlük Seçiniz...":
+        if not onay:
+            st.error("⚠️ Lütfen formu göndermeden önce kural ve bilgilendirme metnini okuyup onaylayınız!")
+        elif baskanlik == "Başkanlık Seçiniz..." or mudurluk == "Müdürlük Seçiniz...":
             st.error("⚠️ Lütfen listeden geçerli bir Başkanlık ve Müdürlük seçiniz!")
         elif not (sicil.strip() and ad_soyad.strip() and unvan.strip()):
             st.error("⚠️ Lütfen Sicil, İsim Soyisim ve Ünvan alanlarını eksiksiz doldurunuz!")
@@ -493,7 +484,6 @@ elif sayfa == "⚙️ Yönetim Dashboard'u":
                     use_container_width=True
                 )
 
-            # SİLME BÖLÜMÜ (MÜDAHALE ALANI)
             st.divider()
             st.subheader("🗑️ Rezervasyon Verisi / Test Kaydı Silme")
             
@@ -505,7 +495,7 @@ elif sayfa == "⚙️ Yönetim Dashboard'u":
                     format_func=lambda x: f"ID: {x} | {df_rez[df_rez['id'] == x]['ad_soyad'].values[0]} ({df_rez[df_rez['id'] == x]['sicil'].values[0]})"
                 )
             with col_del2:
-                st.write("") # Hizalama boşluğu
+                st.write("")
                 st.write("") 
                 if st.button("❌ Seçili Kaydı Sil", use_container_width=True):
                     kayit_sil(silinecek_id)
