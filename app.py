@@ -28,7 +28,7 @@ components.html(
     width=0,
 )
 
-ADMIN_PASSWORD = "123"
+ADMIN_PASSWORD = "kogm2071"
 DB_FILE = "rezervasyonlar.db"
 
 # ==============================================================================
