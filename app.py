@@ -458,11 +458,7 @@ elif sayfa == "⚙️ Yönetim Dashboard'u":
             st.dataframe(df_goster, use_container_width=True)
             
             st.download_button(
-                label="📄 CSV / Excel Olarak İndir (.csv)",
-                data=df_goster.to_csv(index=False).encode('utf-8-sig'),
-                file_name="eylul_2026_rezervasyon_listesi.csv",
-                mime="text/csv",
-                use_container_width=True
+              import io
             )
 
             st.divider()
