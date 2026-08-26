@@ -29,7 +29,7 @@ width=0,
 )
 
 ADMIN_PASSWORD = "123"
-DB_FILE = "rezervasyonlar.db"
+DB_FILE = "/tmp/rezervasyonlar.db"
 
 # ==============================================================================
 # BAŞKANLIK VE MÜDÜRLÜK LİSTELERİ
