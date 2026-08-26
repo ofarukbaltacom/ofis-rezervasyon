@@ -104,7 +104,7 @@ TUM_GUNLER = [gun for gunler in EYLUL_HAFTALARI.values() for gun in gunler]
 # ==============================================================================
 # VERİTABANI İŞLEMLERİ
 # ==============================================================================
-def init_db():
+definit_db():
 conn = sqlite3.connect(DB_FILE, check_same_thread=False)
 cursor = conn.cursor()
 cursor.execute("""
