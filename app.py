@@ -457,8 +457,17 @@ elif sayfa == "⚙️ Yönetim Dashboard'u":
                 
             st.dataframe(df_goster, use_container_width=True)
             
+            # --- EXCEL (.XLSX) OLARAK İNDİRME BUTONU ---
+            buffer = io.BytesIO()
+            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                df_goster.to_excel(writer, index=False, sheet_name='Eylül Rezervasyonları')
+
             st.download_button(
-              import io
+                label="📊 Excel Olarak İndir (.xlsx)",
+                data=buffer.getvalue(),
+                file_name="eylul_2026_rezervasyon_listesi.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
             )
 
             st.divider()
