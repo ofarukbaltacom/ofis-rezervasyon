@@ -64,7 +64,6 @@ MUDURLUK_LISTESI = [
     "KARGO NETWORK PLANLAMA MD.",
     "KARGO NETWORK İŞ BİRLİKLERİ MD.",
     "KARGO TARİFE MD.",
-    "KARGO SATIŞ MD. (İSTANBUL)",
     "KARGO MÜŞTERİ DENEYİMİ MD.",
     "KARGO KİLİT MÜŞTERİLER MD. (AVRUPA)",
     "KARGO KİLİT MÜŞTERİLER MD. (ASYA)",
@@ -114,7 +113,6 @@ def init_db():
             ad_soyad TEXT,
             baskanlik TEXT,
             mudurluk TEXT,
-            unvan TEXT,
             hafta_1 TEXT,
             hafta_2 TEXT,
             hafta_3 TEXT,
@@ -195,14 +193,14 @@ def verileri_getir():
     conn.close()
     return df
 
-def veri_ekle(sicil, ad_soyad, baskanlik, mudurluk, unvan, h1, h2, h3, h4, h5, kayit_tarihi, detaylar_str):
+def veri_ekle(sicil, ad_soyad, baskanlik, mudurluk, h1, h2, h3, h4, h5, kayit_tarihi, detaylar_str):
     conn = sqlite3.connect(DB_FILE, check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute("""
         INSERT INTO rezervasyonlar 
-        (sicil, ad_soyad, baskanlik, mudurluk, unvan, hafta_1, hafta_2, hafta_3, hafta_4, hafta_5, kayit_tarihi, secim_detaylari)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (sicil, ad_soyad, baskanlik, mudurluk, unvan, h1, h2, h3, h4, h5, kayit_tarihi, detaylar_str))
+        (sicil, ad_soyad, baskanlik, mudurluk, hafta_1, hafta_2, hafta_3, hafta_4, hafta_5, kayit_tarihi, secim_detaylari)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (sicil, ad_soyad, baskanlik, mudurluk, h1, h2, h3, h4, h5, kayit_tarihi, detaylar_str))
     conn.commit()
     conn.close()
 
@@ -247,14 +245,15 @@ if sayfa == "📝 Eylül Ayı Rezervasyon Formu":
     genel_limits = kontenjanlari_getir()
     st.title("🏢 Eylül 2026 Uydu Ofis Kullanım / Rezervasyon Formu")
     st.markdown("Lütfen kişisel bilgilerinizi giriniz ve Eylül ayı için haftalık **en fazla 2 gün** olacak şekilde ofis günlerinizi seçiniz.")
-   
+    
+    # --- KURALLAR (KONTENJAN ÜSTÜNE EKLENDİ) ---
     st.warning("""
-        Kurallara ay içinde üç defa uymayan çalışanlarımızın ilgili ofislere giriş yetkileri kısıtlanacaktır. 
-        • Rezervasyon yapıp, gitmeyeceği bilgisini planlama ekibiyle paylaşmamak, 
-        • Rezervasyon yaptığı günden farklı günü veya farklı lokasyonu kullanmak.
-        """)
-        onay = st.checkbox("Okudum, onaylıyorum.")
-
+    **Kurallara ay içinde üç defa uymayan çalışanlarımızın ilgili ofislere giriş yetkileri kısıtlanacaktır:**
+    * Rezervasyon yapıp, gitmeyeceği bilgisini planlama ekibiyle paylaşmamak,
+    * Rezervasyon yaptığı günden farklı günü veya farklı lokasyonu kullanmak.
+    """)
+    
+    # --- GÜNLÜK KONTENJAN BİLGİSİ ---
     st.info(f"💡 **Günlük Kontenjanlar:** Atatürk Havalimanı ({genel_limits.get('Atatürk Havalimanı', 30)} Kişi) | Libadiye Teknoloji Ofisi ({genel_limits.get('Libadiye Teknoloji Ofisi', 20)} Kişi)")
 
     with st.form("aylik_rezervasyon_formu"):
@@ -310,6 +309,8 @@ if sayfa == "📝 Eylül Ayı Rezervasyon Formu":
                     
             st.markdown("---")
 
+        onay = st.checkbox("Okudum, onaylıyorum.")
+
         submit_btn = st.form_submit_button("Eylül Ayı Rezervasyonunu Onayla", use_container_width=True)
 
     if submit_btn:
@@ -317,8 +318,8 @@ if sayfa == "📝 Eylül Ayı Rezervasyon Formu":
             st.error("⚠️ Lütfen formu göndermeden önce kural ve bilgilendirme metnini okuyup onaylayınız!")
         elif baskanlik == "Başkanlık Seçiniz..." or mudurluk == "Müdürlük Seçiniz...":
             st.error("⚠️ Lütfen listeden geçerli bir Başkanlık ve Müdürlük seçiniz!")
-        elif not (sicil.strip() and ad_soyad.strip() and unvan.strip()):
-            st.error("⚠️ Lütfen Sicil, İsim Soyisim ve Ünvan alanlarını eksiksiz doldurunuz!")
+        elif not (sicil.strip() and ad_soyad.strip()):
+            st.error("⚠️ Lütfen Sicil ve İsim Soyisim alanlarını eksiksiz doldurunuz!")
         elif not secimler:
             st.error("⚠️ Lütfen en az bir gün için tesis seçimi yapınız!")
         else:
@@ -350,7 +351,6 @@ if sayfa == "📝 Eylül Ayı Rezervasyon Formu":
                     ad_soyad.strip(),
                     baskanlik,
                     mudurluk,
-                    unvan.strip(),
                     hafta_metinleri.get(h_keys[0], "-"),
                     hafta_metinleri.get(h_keys[1], "-"),
                     hafta_metinleri.get(h_keys[2], "-"),
@@ -442,7 +442,7 @@ elif sayfa == "⚙️ Yönetim Dashboard'u":
         
         df_rez = verileri_getir()
         if not df_rez.empty:
-            df_goster = df_rez.drop(columns=['secim_detaylari'], errors='ignore')
+            df_goster = df_rez.drop(columns=['secim_detaylari', 'unvan'], errors='ignore')
             
             arama_metni = st.text_input("Arama Yap (Sicil, İsim, Başkanlık veya Müdürlük)", placeholder="Örn: Ahmet, 12345 veya GELİR")
             if arama_metni:
