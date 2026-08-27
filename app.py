@@ -247,6 +247,13 @@ if sayfa == "📝 Eylül Ayı Rezervasyon Formu":
     genel_limits = kontenjanlari_getir()
     st.title("🏢 Eylül 2026 Uydu Ofis Kullanım / Rezervasyon Formu")
     st.markdown("Lütfen kişisel bilgilerinizi giriniz ve Eylül ayı için haftalık **en fazla 2 gün** olacak şekilde ofis günlerinizi seçiniz.")
+    st.warning("""
+        Kurallara ay içinde üç defa uymayan çalışanlarımızın ilgili ofislere giriş yetkileri kısıtlanacaktır. 
+        • Rezervasyon yapıp, gitmeyeceği bilgisini planlama ekibiyle paylaşmamak, 
+        • Rezervasyon yaptığı günden farklı günü veya farklı lokasyonu kullanmak.
+        """)
+        
+        onay = st.checkbox("Okudum, onaylıyorum.")
     st.info(f"💡 **Günlük Kontenjanlar:** Atatürk Havalimanı ({genel_limits.get('Atatürk Havalimanı', 30)} Kişi) | Libadiye Teknoloji Ofisi ({genel_limits.get('Libadiye Teknoloji Ofisi', 20)} Kişi)")
 
     with st.form("aylik_rezervasyon_formu"):
@@ -301,15 +308,6 @@ if sayfa == "📝 Eylül Ayı Rezervasyon Formu":
                     secimler.setdefault(hafta_adi, []).append((gun, "Libadiye Teknoloji Ofisi"))
                     
             st.markdown("---")
-
-        st.warning("""
-        Aşağıdaki kurallara ay içinde 3 defa uymayan çalışanlarımızın ilgili ofislere giriş yetkileri kısıtlanacaktır.
-
-        • Rezervasyon yapıp gitmemek ve gitmediği bilgisini KOPS ile paylaşmamak,
-        • Rezervasyon yaptığı günden farklı günde veya farklı lokasyonu kullanmak.
-        """)
-        
-        onay = st.checkbox("Okudum, onaylıyorum.")
 
         submit_btn = st.form_submit_button("Eylül Ayı Rezervasyonunu Onayla", use_container_width=True)
 
