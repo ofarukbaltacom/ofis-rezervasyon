@@ -28,7 +28,7 @@ components.html(
     width=0,
 )
 
-ADMIN_PASSWORD = "123"
+ADMIN_PASSWORD = "kogm2071"
 DB_FILE = "/tmp/rezervasyonlar.db"
 
 # ==============================================================================
@@ -247,7 +247,7 @@ if sayfa == "📝 Eylül Ayı Rezervasyon Formu":
     genel_limits = kontenjanlari_getir()
     st.title("🏢 Eylül 2026 Uydu Ofis Kullanım / Rezervasyon Formu")
     st.markdown("Lütfen kişisel bilgilerinizi giriniz ve Eylül ayı için haftalık **en fazla 2 gün** olacak şekilde ofis günlerinizi seçiniz.")
-    st.info(f"💡 **Genel Kontenjanlar:** Atatürk Havalimanı ({genel_limits.get('Atatürk Havalimanı', 30)} Kişi) | Libadiye Teknoloji Ofisi ({genel_limits.get('Libadiye Teknoloji Ofisi', 20)} Kişi)")
+    st.info(f"💡 **Günlük Kontenjanlar:** Atatürk Havalimanı ({genel_limits.get('Atatürk Havalimanı', 30)} Kişi) | Libadiye Teknoloji Ofisi ({genel_limits.get('Libadiye Teknoloji Ofisi', 20)} Kişi)")
 
     with st.form("aylik_rezervasyon_formu"):
         st.subheader("👤 Kullanıcı Bilgileri")
@@ -256,7 +256,6 @@ if sayfa == "📝 Eylül Ayı Rezervasyon Formu":
         with col_f1:
             sicil = st.text_input("Sicil Bilgisi", placeholder="Örn: 12345")
             ad_soyad = st.text_input("İsim Soyisim", placeholder="Adınızı ve soyadınızı giriniz")
-            unvan = st.text_input("Ünvan", placeholder="Göreviniz / Ünvanınız")
             
         with col_f2:
             baskanlik = st.selectbox(
