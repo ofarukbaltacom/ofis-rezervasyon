@@ -79,7 +79,7 @@ async def make_reservation(
 async def index():
    today = datetime.now().strftime("%Y-%m-%d")
    locations_json = json.dumps(LOCATIONS)
-   html_content = f"""
+   html_template = """
 <!DOCTYPE html>
 <html lang="tr">
 <head>
@@ -89,17 +89,17 @@ async def index():
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 <style>
-           .desk-card {{
+           .desk-card {
                transition: all 0.2s ease-in-out;
-           }}
-           .desk-card:hover {{
+           }
+           .desk-card:hover {
                transform: translateY(-2px);
-           }}
+           }
 </style>
 </head>
 <body class="bg-slate-100 min-h-screen text-slate-800">
 <!-- Header -->
-<header class="bg-slate-900 text-white shadow-lg border-b border-red-600">
+<header class="bg-slate-900 text-white shadow-lg border-b-4 border-red-600">
 <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
 <div class="flex items-center space-x-3">
 <i class="fa-solid fa-building-user text-red-500 text-2xl"></i>
@@ -143,16 +143,16 @@ async def index():
 </div>
 <div>
 <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Rezervasyon Tarihi</label>
-<input type="date" id="res_date" value="{today}" onchange="updateView()" min="{today}"
+<input type="date" id="res_date" value="__TODAY__" onchange="updateView()" min="__TODAY__"
                            class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-sm">
 </div>
 <div>
 <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Seçilen Masa</label>
-<input type="text" id="desk_id" readonly placeholder="Haritadan/Listeden Masa Seçin" required
+<input type="text" id="desk_id" readonly placeholder="Haritadan Masa Seçin" required
                            class="w-full px-3 py-2 border border-slate-200 bg-slate-100 rounded-lg text-sm font-semibold text-red-600">
 </div>
 <button type="submit"
-                       class="w-full bg-red-600 hover:bg-red-700 text-white font-medium py-2.5 px-4 rounded-lg transition duration-150 flex items-center justify-center space-x-2 text-sm shadow">
+                       class="w-full bg-red-600 hover:bg-red-700 text-white font-medium py-2.5 px-4 rounded-lg transition duration-150 flex items-center justify-center space-x-2 text-sm shadow cursor-pointer">
 <i class="fa-solid fa-check"></i>
 <span>Rezervasyonu Onayla</span>
 </button>
@@ -191,65 +191,64 @@ async def index():
 </section>
 </main>
 <script>
-           const locations = {locations_json};
-           let reservedDesks = {{}};
+           const locations = __LOCATIONS_JSON__;
+           let reservedDesks = {};
            let selectedDesk = "";
-           async function updateView() {{
+           async function updateView() {
                const location = document.getElementById("location").value;
                const date = document.getElementById("res_date").value;
                document.getElementById("locTitle").innerText = location;
-               // Formdaki seçili masayı sıfırla
                selectedDesk = "";
                document.getElementById("desk_id").value = "";
                if (!date) return;
-               try {{
-                   const res = await fetch(`/api/reservations?date=${{date}}&location=${{encodeURIComponent(location)}}`);
+               try {
+                   const res = await fetch(`/api/reservations?date=${date}&location=${encodeURIComponent(location)}`);
                    const data = await res.json();
-                   reservedDesks = data.reserved || {{}};
+                   reservedDesks = data.reserved || {};
                    renderDesks(location);
-               }} catch (e) {{
+               } catch (e) {
                    console.error("Veriler alınamadı:", e);
-               }}
-           }}
-           function renderDesks(location) {{
+               }
+           }
+           function renderDesks(location) {
                const grid = document.getElementById("deskGrid");
                grid.innerHTML = "";
                const desks = locations[location].desks;
                let busyCount = 0;
-               desks.forEach(deskId => {{
+               desks.forEach(deskId => {
                    const isReserved = reservedDesks.hasOwnProperty(deskId);
                    if (isReserved) busyCount++;
                    const isSelected = selectedDesk === deskId;
                    const card = document.createElement("div");
-                   card.className = `desk-card border-2 rounded-xl p-4 cursor-pointer text-center relative transition ${
+                   card.className = `desk-card border-2 rounded-xl p-4 text-center relative transition ${
                        isReserved
                            ? 'bg-rose-50 border-rose-200 text-rose-700 cursor-not-allowed'
                            : isSelected
-                               ? 'bg-red-50 border-red-600 text-red-700 ring-2 ring-red-400'
-                               : 'bg-slate-50 border-slate-200 hover:border-slate-400 text-slate-700'
+                               ? 'bg-red-50 border-red-600 text-red-700 ring-2 ring-red-400 cursor-pointer'
+                               : 'bg-slate-50 border-slate-200 hover:border-slate-400 text-slate-700 cursor-pointer'
                    }`;
                    let statusBadge = isReserved
-                       ? `<span class="text-[10px] font-semibold bg-rose-200 text-rose-800 px-2 py-0.5 rounded-full block mt-2 truncate">${{reservedDesks[deskId].name}}</span>`
+                       ? `<span class="text-[10px] font-semibold bg-rose-200 text-rose-800 px-2 py-0.5 rounded-full block mt-2 truncate">${reservedDesks[deskId].name}</span>`
                        : `<span class="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full block mt-2">Uygun</span>`;
                    card.innerHTML = `
 <div class="text-2xl mb-1"><i class="fa-solid fa-desktop"></i></div>
-<div class="text-xs font-bold">${{deskId}}</div>
-                       ${{statusBadge}}
+<div class="text-xs font-bold">${deskId}</div>
+                       ${statusBadge}
                    `;
-                   if (!isReserved) {{
+                   if (!isReserved) {
                        card.onclick = () => selectDesk(deskId);
-                   }}
+                   }
                    grid.appendChild(card);
-               }});
+               });
                document.getElementById("statBusy").innerText = busyCount;
                document.getElementById("statFree").innerText = desks.length - busyCount;
-           }}
-           function selectDesk(deskId) {{
+           }
+           function selectDesk(deskId) {
                selectedDesk = deskId;
                document.getElementById("desk_id").value = deskId;
                renderDesks(document.getElementById("location").value);
-           }}
-           async function handleReserve(event) {{
+           }
+           async function handleReserve(event) {
                event.preventDefault();
                const alertBox = document.getElementById("alertBox");
                alertBox.className = "mt-4 hidden p-3 rounded-lg text-xs font-medium";
@@ -259,32 +258,32 @@ async def index():
                formData.append("location", document.getElementById("location").value);
                formData.append("desk_id", document.getElementById("desk_id").value);
                formData.append("res_date", document.getElementById("res_date").value);
-               try {{
-                   const response = await fetch("/api/reserve", {{
+               try {
+                   const response = await fetch("/api/reserve", {
                        method: "POST",
                        body: formData
-                   }});
+                   });
                    const result = await response.json();
-                   if (response.ok) {{
+                   if (response.ok) {
                        alertBox.innerText = result.message;
                        alertBox.classList.remove("hidden");
                        alertBox.classList.add("bg-emerald-100", "text-emerald-800", "border", "border-emerald-300");
                        updateView();
-                   }} else {{
+                   } else {
                        alertBox.innerText = result.message || "Bir hata oluştu.";
                        alertBox.classList.remove("hidden");
                        alertBox.classList.add("bg-rose-100", "text-rose-800", "border", "border-rose-300");
-                   }}
-               }} catch (e) {{
+                   }
+               } catch (e) {
                    alertBox.innerText = "Bağlantı hatası oluştu.";
                    alertBox.classList.remove("hidden");
                    alertBox.classList.add("bg-rose-100", "text-rose-800", "border", "border-rose-300");
-               }}
-           }}
-           // Sayfa yüklendiğinde masaları çek
+               }
+           }
            window.onload = updateView;
 </script>
 </body>
 </html>
    """
-   return html_content
+   html_rendered = html_template.replace("__TODAY__", today).replace("__LOCATIONS_JSON__", locations_json)
+   return HTMLResponse(content=html_rendered)
