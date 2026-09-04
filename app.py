@@ -2,7 +2,6 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 import sqlite3
 from datetime import datetime
-import json
 import csv
 import io
 app = FastAPI(title="Uydu Ofis Rezervasyon Portalı")
@@ -17,12 +16,13 @@ def init_db():
    conn = sqlite3.connect(DB_FILE)
    cursor = conn.cursor()
    cursor.execute("PRAGMA journal_mode=WAL;")
-   # Rezervasyonlar Tablosu
+   # Rezervasyonlar Tablosu (Başkanlık ve Müdürlük Eklendi, E-posta Kaldırıldı)
    cursor.execute("""
        CREATE TABLE IF NOT EXISTS reservations (
            id INTEGER PRIMARY KEY AUTOINCREMENT,
            name TEXT NOT NULL,
-           email TEXT NOT NULL,
+           baskanlik TEXT NOT NULL,
+           mudurluk TEXT NOT NULL,
            location TEXT NOT NULL,
            res_date TEXT NOT NULL,
            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -49,10 +49,8 @@ def get_db():
 async def get_availability(date: str):
    conn = get_db()
    cursor = conn.cursor()
-   # Tarihe özel tanımlanmış kontenjanları çek
    cursor.execute("SELECT location, capacity FROM custom_capacities WHERE res_date = ?", (date,))
    custom_caps = dict(cursor.fetchall())
-   # İlgili gündeki rezervasyon sayılarını çek
    cursor.execute("SELECT location, COUNT(*) FROM reservations WHERE res_date = ? GROUP BY location", (date,))
    booked_counts = dict(cursor.fetchall())
    conn.close()
@@ -69,22 +67,27 @@ async def get_availability(date: str):
 @app.post("/api/reserve")
 async def make_reservation(
    name: str = Form(...),
-   email: str = Form(...),
+   baskanlik: str = Form(...),
+   mudurluk: str = Form(...),
    location: str = Form(...),
    res_date: str = Form(...)
 ):
    if location not in DEFAULT_CAPACITIES:
        return JSONResponse(status_code=400, content={"message": "Geçersiz lokasyon seçimi!"})
+   # Hafta sonu kontrolü
+   dt = datetime.strptime(res_date, "%Y-%m-%d")
+   if dt.weekday() >= 5:
+       return JSONResponse(status_code=400, content={"message": "Hafta sonları rezervasyon yapılamaz!"})
    conn = get_db()
    cursor = conn.cursor()
-   # Mükerrer kayıt kontrolü
+   # Mükerrer kayıt kontrolü (Aynı İsim ve Aynı Tarih)
    cursor.execute(
-       "SELECT id FROM reservations WHERE email = ? AND res_date = ?",
-       (email, res_date)
+       "SELECT id FROM reservations WHERE LOWER(name) = LOWER(?) AND res_date = ?",
+       (name.strip(), res_date)
    )
    if cursor.fetchone():
        conn.close()
-       return JSONResponse(status_code=400, content={"message": "Bu e-posta adresi ile seçilen tarihe zaten bir rezervasyon yapılmış!"})
+       return JSONResponse(status_code=400, content={"message": "Bu isim ile seçilen tarihe zaten bir rezervasyon yapılmış!"})
    # Kontenjan kontrolü
    cursor.execute("SELECT capacity FROM custom_capacities WHERE location = ? AND res_date = ?", (location, res_date))
    custom_row = cursor.fetchone()
@@ -96,8 +99,8 @@ async def make_reservation(
        return JSONResponse(status_code=400, content={"message": f"{location} için {res_date} tarihindeki kontenjan dolmuştur!"})
    # Kaydı Ekle
    cursor.execute(
-       "INSERT INTO reservations (name, email, location, res_date) VALUES (?, ?, ?, ?)",
-       (name.strip(), email.strip().lower(), location, res_date)
+       "INSERT INTO reservations (name, baskanlik, mudurluk, location, res_date) VALUES (?, ?, ?, ?, ?)",
+       (name.strip(), baskanlik, mudurluk, location, res_date)
    )
    conn.commit()
    conn.close()
@@ -114,11 +117,19 @@ async def get_all_reservations(password: str):
        return JSONResponse(status_code=401, content={"message": "Yetkisiz erişim!"})
    conn = get_db()
    cursor = conn.cursor()
-   cursor.execute("SELECT id, name, email, location, res_date, created_at FROM reservations ORDER BY res_date DESC, id DESC")
+   cursor.execute("SELECT id, name, baskanlik, mudurluk, location, res_date, created_at FROM reservations ORDER BY res_date DESC, id DESC")
    rows = cursor.fetchall()
    conn.close()
    reservations = [
-       {"id": r[0], "name": r[1], "email": r[2], "location": r[3], "res_date": r[4], "created_at": r[5]}
+       {
+           "id": r[0],
+           "name": r[1],
+           "baskanlik": r[2],
+           "mudurluk": r[3],
+           "location": r[4],
+           "res_date": r[5],
+           "created_at": r[6]
+       }
        for r in rows
    ]
    return JSONResponse(content=reservations)
@@ -157,22 +168,21 @@ async def export_excel(password: str):
        return JSONResponse(status_code=401, content={"message": "Yetkisiz erişim!"})
    conn = get_db()
    cursor = conn.cursor()
-   cursor.execute("SELECT id, name, email, location, res_date, created_at FROM reservations ORDER BY res_date DESC")
+   cursor.execute("SELECT id, name, baskanlik, mudurluk, location, res_date, created_at FROM reservations ORDER BY res_date DESC")
    rows = cursor.fetchall()
    conn.close()
    output = io.StringIO()
    writer = csv.writer(output, delimiter=';')
-   writer.writerow(["ID", "Ad Soyad", "E-Posta", "Lokasyon", "Rezervasyon Tarihi", "Kayıt Tarihi"])
+   writer.writerow(["ID", "Ad Soyad", "Başkanlık", "Müdürlük", "Lokasyon", "Rezervasyon Tarihi", "Kayıt Tarihi"])
    for row in rows:
        writer.writerow(row)
    response = Response(content=output.getvalue().encode('utf-8-sig'), media_type="text/csv")
-   response.headers["Content-Disposition"] = "attachment; filename=Uydu_Ofis_Rezervasyon_Listesi.csv"
+   response.headers["Content-Disposition"] = "attachment; filename=Eylul_2026_Uydu_Ofis_Rezervasyonlari.csv"
    return response
 # ----------------- MAIN UI HTML -----------------
 @app.get("/", response_class=HTMLResponse)
 async def index():
-   today = datetime.now().strftime("%Y-%m-%d")
-   html_content = f"""
+   html_content = """
 <!DOCTYPE html>
 <html lang="tr">
 <head>
@@ -187,10 +197,10 @@ async def index():
 <header class="bg-slate-900 text-white shadow-lg border-b-4 border-red-600">
 <div class="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
 <div class="flex items-center space-x-3">
-<i class="fa-solid fa-building-user text-red-500 text-2xl"></i>
+<i class="fa-solid fa-plane-departure text-red-500 text-2xl"></i>
 <div>
 <h1 class="text-xl font-bold tracking-wide">Uydu Ofis Rezervasyon Portalı</h1>
-<p class="text-xs text-slate-400">Türk Hava Yolları - Organizasyonel Gelişim Müdürlüğü</p>
+<p class="text-xs text-slate-400">Turkish Cargo - Eylül 2026 Çalışma Takvimi</p>
 </div>
 </div>
 <div class="flex items-center space-x-3">
@@ -215,9 +225,23 @@ async def index():
                            class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-sm">
 </div>
 <div>
-<label class="block text-xs font-bold text-slate-600 uppercase mb-1">E-Posta Adresi</label>
-<input type="email" id="email" required placeholder="ornek@turkishcargo.com.tr"
-                           class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-sm">
+<label class="block text-xs font-bold text-slate-600 uppercase mb-1">Başkanlık</label>
+<select id="baskanlik" onchange="updateMudurlukOptions()" required
+                           class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-sm bg-white">
+<option value="">Başkanlık Seçiniz</option>
+<option value="Kargo Operasyon Başkanlığı">Kargo Operasyon Başkanlığı</option>
+<option value="Kargo Satış Başkanlığı">Kargo Satış Başkanlığı</option>
+<option value="Kargo Pazarlama Başkanlığı">Kargo Pazarlama Başkanlığı</option>
+<option value="Kargo Gelir Yönetimi ve Ürün Planlama Başkanlığı">Kargo Gelir Yönetimi ve Ürün Planlama Başkanlığı</option>
+<option value="Genel Müdür (Kargo) Yardımcılığı">Genel Müdür (Kargo) Yardımcılığı</option>
+</select>
+</div>
+<div>
+<label class="block text-xs font-bold text-slate-600 uppercase mb-1">Müdürlük</label>
+<select id="mudurluk" required
+                           class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-sm bg-white">
+<option value="">Önce Başkanlık Seçiniz</option>
+</select>
 </div>
 <div>
 <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Lokasyon Seçimi</label>
@@ -228,14 +252,15 @@ async def index():
 </select>
 </div>
 <div>
-<label class="block text-xs font-bold text-slate-600 uppercase mb-1">Rezervasyon Tarihi</label>
-<input type="date" id="res_date" value="{today}" min="{today}" onchange="updateAvailability()"
+<label class="block text-xs font-bold text-slate-600 uppercase mb-1">Eylül 2026 Çalışma Günü</label>
+<input type="date" id="res_date" value="2026-09-01" min="2026-09-01" max="2026-09-30" onchange="validateDateAndFetch()"
                            class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-sm">
+<p id="dateWarning" class="text-xs text-rose-600 mt-1 hidden"><i class="fa-solid fa-circle-exclamation"></i> Hafta sonları seçim yapılamaz. Lütfen bir iş günü seçin.</p>
 </div>
 <div class="flex items-start space-x-2 pt-2">
 <input type="checkbox" id="rulesCheck" required class="mt-0.5 rounded text-red-600 focus:ring-red-500">
 <label for="rulesCheck" class="text-xs text-slate-600 leading-tight">
-                           Uydu ofis kullanım kurallarını ve çalışma esaslarını okudum, kabul ediyorum.
+                           Uydu ofis çalışma esaslarını ve talimatnamelerini kabul ediyorum.
 </label>
 </div>
 <button type="submit" id="submitBtn"
@@ -258,10 +283,10 @@ async def index():
 </div>
 </div>
 <div class="bg-slate-50 rounded-xl p-5 border border-slate-200 text-xs text-slate-600 space-y-2">
-<p class="font-bold text-slate-700"><i class="fa-solid fa-circle-info text-blue-500 mr-1"></i> Bilgilendirme ve Esaslar:</p>
-<p>• Atatürk Havalimanı standart kontenjanı <b>20 kişi</b>, Libadiye Teknoloji Ofisi <b>30 kişi</b>dir.</p>
-<p>• Aynı tarihe ikinci bir rezervasyon oluşturulamaz.</p>
-<p>• Kontenjanı dolan lokasyonlarda buton otomatik pasif konuma geçer.</p>
+<p class="font-bold text-slate-700"><i class="fa-solid fa-circle-info text-blue-500 mr-1"></i> Eylül 2026 Rezervasyon Esasları:</p>
+<p>• Rezervasyonlar Eylül 2026 ayındaki <b>Pazartesi - Cuma</b> günleri için geçerlidir.</p>
+<p>• Atatürk Havalimanı kontenjanı <b>20</b>, Libadiye Teknoloji Ofisi kontenjanı <b>30</b> kişidir.</p>
+<p>• Sistem e-posta adresi gerektirmez, Ad Soyad ve Birim eşleşmesiyle çalışır.</p>
 </div>
 </section>
 </main>
@@ -291,14 +316,14 @@ async def index():
 <!-- Kontenjan Güncelleme Paneli -->
 <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
 <h4 class="text-xs font-bold text-slate-700 uppercase mb-3 flex items-center">
-<i class="fa-solid fa-sliders text-red-600 mr-2"></i> Tarih Bazlı Kontenjan Güncelle
+<i class="fa-solid fa-sliders text-red-600 mr-2"></i> Eylül 2026 Tarih Bazlı Kontenjan Güncelle
 </h4>
 <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
 <select id="adminLoc" class="px-2 py-1.5 border rounded text-xs">
 <option value="Atatürk Havalimanı">Atatürk Havalimanı</option>
 <option value="Libadiye Teknoloji Ofisi">Libadiye Teknoloji Ofisi</option>
 </select>
-<input type="date" id="adminDate" value="{today}" class="px-2 py-1.5 border rounded text-xs">
+<input type="date" id="adminDate" value="2026-09-01" min="2026-09-01" max="2026-09-30" class="px-2 py-1.5 border rounded text-xs">
 <input type="number" id="adminCap" placeholder="Yeni Kapasite" min="0" class="px-2 py-1.5 border rounded text-xs">
 <button onclick="setCustomCapacity()" class="bg-slate-800 hover:bg-slate-900 text-white text-xs py-1.5 px-3 rounded font-medium transition">Güncelle</button>
 </div>
@@ -307,7 +332,7 @@ async def index():
 <div>
 <div class="flex justify-between items-center mb-3">
 <h4 class="text-xs font-bold text-slate-700 uppercase flex items-center">
-<i class="fa-solid fa-list-check text-slate-600 mr-2"></i> Tüm Rezervasyonlar
+<i class="fa-solid fa-list-check text-slate-600 mr-2"></i> Tüm Eylül Rezervasyonları
 </h4>
 <button onclick="downloadExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition flex items-center space-x-1">
 <i class="fa-solid fa-file-excel"></i>
@@ -319,7 +344,8 @@ async def index():
 <thead class="bg-slate-100 text-slate-700 uppercase border-b">
 <tr>
 <th class="p-2.5">Ad Soyad</th>
-<th class="p-2.5">E-Posta</th>
+<th class="p-2.5">Başkanlık</th>
+<th class="p-2.5">Müdürlük</th>
 <th class="p-2.5">Lokasyon</th>
 <th class="p-2.5">Tarih</th>
 <th class="p-2.5 text-center">İşlem</th>
@@ -337,141 +363,173 @@ async def index():
 </div>
 <script>
            let currentAdminPass = "";
-           async function updateAvailability() {{
+           const mudurlukData = {
+               "Kargo Operasyon Başkanlığı": ["Kargo Handling Anlaşmaları Müdürlüğü", "Kargo Operasyonel Performans Müdürlüğü", "Kargo Uçuş Operasyon Kontrol Müdürlüğü", "Kargo Güvenlik Müdürlüğü", "Özel Kargo ve Operasyonel Hizmetler Müdürlüğü"],
+               "Kargo Satış Başkanlığı": ["Kargo Kurumsal Müşteriler Müdürlüğü", "Kargo Dijital Satış Müdürlüğü", "Kargo Bölge Müdürlüğü (İstanbul)", "Kargo Bölge Müdürlüğü (Anadolu)"],
+               "Kargo Pazarlama Başkanlığı": ["Kargo Ürün Geliştirme Müdürlüğü", "Kargo Pazarlama İletişimi Müdürlüğü"],
+               "Kargo Gelir Yönetimi ve Ürün Planlama Başkanlığı": ["Kargo Fiyatlandırma Müdürlüğü", "Kargo Kapasite Planlama Müdürlüğü"],
+               "Genel Müdür (Kargo) Yardımcılığı": ["Kargo Organizasyonel Gelişim Müdürlüğü", "Kargo İnsan Kaynakları Müdürlüğü"]
+           };
+           function updateMudurlukOptions() {
+               const baskanlikSelect = document.getElementById("baskanlik");
+               const mudurlukSelect = document.getElementById("mudurluk");
+               const selectedBaskanlik = baskanlikSelect.value;
+               mudurlukSelect.innerHTML = '<option value="">Müdürlük Seçiniz</option>';
+               if (selectedBaskanlik && mudurlukData[selectedBaskanlik]) {
+                   mudurlukData[selectedBaskanlik].forEach(m => {
+                       const opt = document.createElement("option");
+                       opt.value = m;
+                       opt.innerText = m;
+                       mudurlukSelect.appendChild(opt);
+                   });
+               }
+           }
+           function validateDateAndFetch() {
+               const dateInput = document.getElementById("res_date");
+               const warning = document.getElementById("dateWarning");
+               const submitBtn = document.getElementById("submitBtn");
+               const date = new Date(dateInput.value);
+               const day = date.getUTCDay();
+               if (day === 0 || day === 6) { // Pazar veya Cumartesi
+                   warning.classList.remove("hidden");
+                   submitBtn.disabled = true;
+                   submitBtn.classList.add("opacity-50", "cursor-not-allowed");
+               } else {
+                   warning.classList.add("hidden");
+                   submitBtn.disabled = false;
+                   submitBtn.classList.remove("opacity-50", "cursor-not-allowed");
+                   updateAvailability();
+               }
+           }
+           async function updateAvailability() {
                const date = document.getElementById("res_date").value;
                if (!date) return;
                document.getElementById("selectedDateBadge").innerText = date;
-               try {{
-                   const res = await fetch(`/api/availability?date=${{date}}`);
+               try {
+                   const res = await fetch(`/api/availability?date=${date}`);
                    const data = await res.json();
                    renderStatusCards(data);
-               }} catch (e) {{
+               } catch (e) {
                    console.error("Kontenjan çekilemedi:", e);
-               }}
-           }}
-           function renderStatusCards(data) {{
+               }
+           }
+           function renderStatusCards(data) {
                const container = document.getElementById("statusCards");
                container.innerHTML = "";
                const selectedLoc = document.getElementById("location").value;
-               for (const [locName, info] of Object.entries(data)) {{
+               for (const [locName, info] of Object.entries(data)) {
                    const isSelected = locName === selectedLoc;
                    const isFull = info.remaining <= 0;
                    const percent = Math.round((info.booked / info.capacity) * 100);
                    const card = document.createElement("div");
-                   card.className = `p-4 rounded-xl border transition ${{
+                   card.className = `p-4 rounded-xl border transition ${
                        isSelected ? 'border-red-500 bg-red-50/30' : 'border-slate-200 bg-white'
-                   }}`;
+                   }`;
                    card.innerHTML = `
 <div class="flex justify-between items-center mb-2">
-<span class="font-bold text-sm text-slate-800">${{locName}}</span>
-<span class="text-xs font-semibold px-2 py-0.5 rounded-full ${{
+<span class="font-bold text-sm text-slate-800">${locName}</span>
+<span class="text-xs font-semibold px-2 py-0.5 rounded-full ${
                                isFull ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
-                           }}">
-                               ${{isFull ? 'Doldu' : info.remaining + ' Boş Kontenjan'}}
+                           }">
+                               ${isFull ? 'Doldu' : info.remaining + ' Boş Kontenjan'}
 </span>
 </div>
 <div class="w-full bg-slate-200 rounded-full h-2 mb-2 overflow-hidden">
-<div class="bg-red-600 h-2 rounded-full transition-all duration-300" style="width: ${{percent}}%"></div>
+<div class="bg-red-600 h-2 rounded-full transition-all duration-300" style="width: ${percent}%"></div>
 </div>
 <div class="flex justify-between text-xs text-slate-500">
-<span>Rezerve: <b>${{info.booked}}</b> / ${{info.capacity}}</span>
-<span>Doluluk: %${{percent}}</span>
+<span>Rezerve: <b>${info.booked}</b> / ${info.capacity}</span>
+<span>Doluluk: %${percent}</span>
 </div>
                    `;
                    container.appendChild(card);
-               }}
-               const submitBtn = document.getElementById("submitBtn");
-               if (data[selectedLoc] && data[selectedLoc].remaining <= 0) {{
-                   submitBtn.disabled = true;
-                   submitBtn.classList.add("opacity-50", "cursor-not-allowed");
-               }} else {{
-                   submitBtn.disabled = false;
-                   submitBtn.classList.remove("opacity-50", "cursor-not-allowed");
-               }}
-           }}
-           async function handleReserve(event) {{
+               }
+           }
+           async function handleReserve(event) {
                event.preventDefault();
                const alertBox = document.getElementById("alertBox");
                alertBox.className = "mt-4 hidden p-3 rounded-lg text-xs font-medium";
                const formData = new FormData();
                formData.append("name", document.getElementById("name").value);
-               formData.append("email", document.getElementById("email").value);
+               formData.append("baskanlik", document.getElementById("baskanlik").value);
+               formData.append("mudurluk", document.getElementById("mudurluk").value);
                formData.append("location", document.getElementById("location").value);
                formData.append("res_date", document.getElementById("res_date").value);
-               try {{
-                   const response = await fetch("/api/reserve", {{
+               try {
+                   const response = await fetch("/api/reserve", {
                        method: "POST",
                        body: formData
-                   }});
+                   });
                    const result = await response.json();
-                   if (response.ok) {{
+                   if (response.ok) {
                        alertBox.innerText = result.message;
                        alertBox.classList.remove("hidden");
                        alertBox.classList.add("bg-emerald-100", "text-emerald-800", "border", "border-emerald-300");
                        document.getElementById("resForm").reset();
-                       document.getElementById("res_date").value = "{today}";
+                       document.getElementById("res_date").value = "2026-09-01";
                        updateAvailability();
-                   }} else {{
+                   } else {
                        alertBox.innerText = result.message || "Bir hata oluştu.";
                        alertBox.classList.remove("hidden");
                        alertBox.classList.add("bg-rose-100", "text-rose-800", "border", "border-rose-300");
-                   }}
-               }} catch (e) {{
+                   }
+               } catch (e) {
                    alertBox.innerText = "Bağlantı hatası oluştu.";
                    alertBox.classList.remove("hidden");
                    alertBox.classList.add("bg-rose-100", "text-rose-800", "border", "border-rose-300");
-               }}
-           }}
-           function toggleAdminModal() {{
+               }
+           }
+           function toggleAdminModal() {
                const modal = document.getElementById("adminModal");
                modal.classList.toggle("hidden");
-           }}
-           async function loginAdmin() {{
+           }
+           async function loginAdmin() {
                const pass = document.getElementById("adminPass").value;
                const err = document.getElementById("adminLoginErr");
                const formData = new FormData();
                formData.append("password", pass);
-               const res = await fetch("/api/admin/login", {{ method: "POST", body: formData }});
-               if (res.ok) {{
+               const res = await fetch("/api/admin/login", { method: "POST", body: formData });
+               if (res.ok) {
                    currentAdminPass = pass;
                    document.getElementById("adminLoginForm").classList.add("hidden");
                    document.getElementById("adminContent").classList.remove("hidden");
                    loadAdminReservations();
-               }} else {{
+               } else {
                    err.innerText = "Hatalı parola!";
                    err.classList.remove("hidden");
-               }}
-           }}
-           async function loadAdminReservations() {{
-               const res = await fetch(`/api/admin/reservations?password=${{currentAdminPass}}`);
+               }
+           }
+           async function loadAdminReservations() {
+               const res = await fetch(`/api/admin/reservations?password=${currentAdminPass}`);
                if (!res.ok) return;
                const data = await res.json();
                const tbody = document.getElementById("resTableBody");
                tbody.innerHTML = "";
-               data.forEach(r => {{
+               data.forEach(r => {
                    const tr = document.createElement("tr");
                    tr.innerHTML = `
-<td class="p-2.5 font-medium text-slate-800">${{r.name}}</td>
-<td class="p-2.5">${{r.email}}</td>
-<td class="p-2.5">${{r.location}}</td>
-<td class="p-2.5 font-semibold text-red-600">${{r.res_date}}</td>
+<td class="p-2.5 font-medium text-slate-800">${r.name}</td>
+<td class="p-2.5 text-slate-500">${r.baskanlik}</td>
+<td class="p-2.5 text-slate-500">${r.mudurluk}</td>
+<td class="p-2.5 font-medium">${r.location}</td>
+<td class="p-2.5 font-semibold text-red-600">${r.res_date}</td>
 <td class="p-2.5 text-center">
-<button onclick="deleteRes(${{r.id}})" class="text-rose-600 hover:text-rose-800"><i class="fa-solid fa-trash"></i></button>
+<button onclick="deleteRes(${r.id})" class="text-rose-600 hover:text-rose-800"><i class="fa-solid fa-trash"></i></button>
 </td>
                    `;
                    tbody.appendChild(tr);
-               }});
-           }}
-           async function deleteRes(id) {{
+               });
+           }
+           async function deleteRes(id) {
                if (!confirm("Bu kaydı silmek istediğinize emin misiniz?")) return;
                const formData = new FormData();
                formData.append("id", id);
                formData.append("password", currentAdminPass);
-               await fetch("/api/admin/delete-reservation", {{ method: "POST", body: formData }});
+               await fetch("/api/admin/delete-reservation", { method: "POST", body: formData });
                loadAdminReservations();
                updateAvailability();
-           }}
-           async function setCustomCapacity() {{
+           }
+           async function setCustomCapacity() {
                const loc = document.getElementById("adminLoc").value;
                const date = document.getElementById("adminDate").value;
                const cap = document.getElementById("adminCap").value;
@@ -481,16 +539,16 @@ async def index():
                formData.append("res_date", date);
                formData.append("capacity", cap);
                formData.append("password", currentAdminPass);
-               const res = await fetch("/api/admin/set-capacity", {{ method: "POST", body: formData }});
-               if (res.ok) {{
+               const res = await fetch("/api/admin/set-capacity", { method: "POST", body: formData });
+               if (res.ok) {
                    alert("Kontenjan başarıyla güncellendi.");
                    updateAvailability();
-               }}
-           }}
-           function downloadExcel() {{
-               window.location.href = `/api/admin/export-excel?password=${{currentAdminPass}}`;
-           }}
-           window.onload = updateAvailability;
+               }
+           }
+           function downloadExcel() {
+               window.location.href = `/api/admin/export-excel?password=${currentAdminPass}`;
+           }
+           window.onload = validateDateAndFetch;
 </script>
 </body>
 </html>
