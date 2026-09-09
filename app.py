@@ -7,7 +7,7 @@ import string
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 import sqlite3
-app = FastAPI(title="Turkish Cargo Uydu Ofis Rezervasyon Portalı")
+app = FastAPI(title="Uydu Ofis Rezervasyon Portalı")
 DB_FILE = "reservations.db"
 ADMIN_PASSWORD = "kogm2071"
 DEFAULT_CAPACITIES = {
@@ -200,7 +200,6 @@ async def make_reservation(
    )
  conn.commit()
  conn.close()
- # Yanıt olarak PNR kodunu da açıkça dönüyoruz
  msg = f"{len(valid_dates)} adet gün için rezervasyonunuz başarıyla oluşturuldu."
  if errors:
    msg += f"<br><small class='text-amber-700'>Uyarı: {', '.join(errors)}</small>"
@@ -466,12 +465,12 @@ async def index():
 <p class="text-xs text-slate-500">Rezervasyonlarınızı görüntülemek ve dilediğiniz günü iptal etmek için PNR kodunuzu ve sicilinizi giriniz.</p>
 <div>
 <label class="block text-xs font-bold text-slate-600 uppercase mb-1">PNR Kodu</label>
-<input type="text" id="cancel_pnr" required placeholder="Örn: TK-998877-X9Z1"
+<input type="text" id="cancel_pnr" required placeholder="Örn: TK-123456-ABCD"
                          class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-sm uppercase">
 </div>
 <div>
 <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Sicil No</label>
-<input type="text" id="cancel_sicil" required placeholder="Örn: 998877"
+<input type="text" id="cancel_sicil" required placeholder="Örn: 123456"
                          class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-sm">
 </div>
 <button type="submit"
@@ -851,7 +850,7 @@ async def index():
          }
          async function setCustomCapacity() {
              const loc = document.getElementById("adminLoc").value;
-             const date = document.getElementById("adminDate">value;
+             const date = document.getElementById("adminDate").value;
              const cap = document.getElementById("adminCap").value;
              if (!cap) return alert("Lütfen geçerli bir kapasite girin.");
              const formData = new FormData();
