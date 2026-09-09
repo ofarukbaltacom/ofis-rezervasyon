@@ -7,7 +7,7 @@ import string
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 import sqlite3
-app = FastAPI(title="Uydu Ofis Rezervasyon Portalı")
+app = FastAPI(title="Turkish Cargo Uydu Ofis Rezervasyon Portalı")
 DB_FILE = "reservations.db"
 ADMIN_PASSWORD = "kogm2071"
 DEFAULT_CAPACITIES = {
