@@ -204,10 +204,45 @@ async def make_reservation(
    )
  conn.commit()
  conn.close()
- msg = f"{len(valid_dates)} adet gün için rezervasyonunuz başarıyla oluşturuldu. <br><b>PNR Kodunuz:</b> {pnr_code}"
+ msg = f"{len(valid_dates)} adet gün için rezervasyonunuz başarıyla oluşturuldu. <br><br>🔑 <b>PNR Kodunuz:</b> <span class='text-sm underline'>{pnr_code}</span> (Bu kodu kullanarak rezervasyonunuzu iptal edebilirsiniz.)"
  if errors:
    msg += f"<br><small class='text-amber-700'>Uyarı: {', '.join(errors)}</small>"
  return JSONResponse(content={"message": msg})
+
+@app.post("/api/cancel-reservation")
+async def cancel_reservation(pnr: str = Form(...), sicil: str = Form(...)):
+ conn = get_db()
+ cursor = conn.cursor()
+ cursor.execute(
+     "SELECT id FROM reservations WHERE pnr = ? AND sicil = ?",
+     (pnr.strip().upper(), sicil.strip()),
+ )
+ rows = cursor.fetchall()
+ if not rows:
+   conn.close()
+   return JSONResponse(
+       status_code=400,
+       content={
+           "message": (
+               "Girilen PNR kodu ve sicil numarası ile eşleşen aktif bir"
+               " rezervasyon bulunamadı."
+           )
+       },
+   )
+ cursor.execute(
+     "DELETE FROM reservations WHERE pnr = ? AND sicil = ?",
+     (pnr.strip().upper(), sicil.strip()),
+ )
+ conn.commit()
+ conn.close()
+ return JSONResponse(
+     content={
+         "message": (
+             f"**{pnr.strip().upper()}** numaralı tüm rezervasyonlarınız"
+             " başarıyla iptal edilmiştir."
+         )
+     }
+ )
 
 # ----------------- ADMIN API ENDPOINTS -----------------
 @app.post("/api/admin/login")
@@ -362,11 +397,18 @@ async def index():
 </header>
 <!-- Main Content -->
 <main class="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
-<!-- Sol Panel: Kişisel Bilgiler -->
+<!-- Sol Panel: Kişisel Bilgiler ve Sekmeler -->
 <section class="lg:col-span-1 bg-white rounded-xl shadow-md p-6 border border-slate-200 h-fit space-y-4">
-<h2 class="text-base font-semibold text-slate-900 border-b pb-3 flex items-center">
-<i class="fa-regular fa-id-card text-red-600 mr-2"></i> Kullanıcı Bilgileri
-</h2>
+<div class="flex border-b mb-4 text-sm font-semibold">
+<button onclick="switchTab('create')" id="tabCreateBtn" class="pb-2 px-3 text-red-600 border-b-2 border-red-600 flex items-center space-x-1.5 transition">
+<i class="fa-regular fa-calendar-check"></i> <span>Rezervasyon Yap</span>
+</button>
+<button onclick="switchTab('cancel')" id="tabCancelBtn" class="pb-2 px-3 text-slate-500 hover:text-slate-800 flex items-center space-x-1.5 transition">
+<i class="fa-solid fa-ban"></i> <span>Rezervasyon İptal Et</span>
+</button>
+</div>
+<!-- Rezervasyon Formu -->
+<div id="tabCreateContent">
 <form id="resForm" onsubmit="handleReserve(event)" class="space-y-4">
 <div>
 <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Sicil No</label>
@@ -418,6 +460,29 @@ async def index():
 </button>
 </form>
 <div id="alertBox" class="mt-4 hidden p-3 rounded-lg text-xs font-medium"></div>
+</div>
+<!-- İptal Formu -->
+<div id="tabCancelContent" class="hidden space-y-4">
+<form id="cancelForm" onsubmit="handleCancel(event)" class="space-y-4">
+<p class="text-xs text-slate-500">Rezervasyonunuzu iptal etmek için tarafınıza verilen <b>PNR kodunu</b> ve <b>sicil numaranızı</b> giriniz.</p>
+<div>
+<label class="block text-xs font-bold text-slate-600 uppercase mb-1">PNR Kodu</label>
+<input type="text" id="cancel_pnr" required placeholder="Örn: TK-123456-ABCD"
+                         class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-sm uppercase">
+</div>
+<div>
+<label class="block text-xs font-bold text-slate-600 uppercase mb-1">Sicil No</label>
+<input type="text" id="cancel_sicil" required placeholder="Örn: 123456"
+                         class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-sm">
+</div>
+<button type="submit"
+                     class="w-full bg-slate-800 hover:bg-slate-900 text-white font-medium py-2.5 px-4 rounded-lg transition duration-150 flex items-center justify-center space-x-2 text-sm shadow cursor-pointer">
+<i class="fa-solid fa-ban"></i>
+<span>Rezervasyonu İptal Et</span>
+</button>
+</form>
+<div id="cancelAlertBox" class="mt-4 hidden p-3 rounded-lg text-xs font-medium"></div>
+</div>
 <div class="bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs text-slate-600 space-y-1">
 <p class="font-bold text-slate-700"><i class="fa-solid fa-circle-info text-blue-500"></i> Kurallar:</p>
 <p>• Her çalışma haftasından <b>en fazla 2 gün</b> seçebilirsiniz.</p>
@@ -520,6 +585,23 @@ async def index():
              "Kargo Gelir Yönetimi ve Ürün Planlama Başkanlığı": ["Kargo Fiyatlandırma Müdürlüğü", "Kargo Kapasite Planlama Müdürlüğü"],
              "Genel Müdür (Kargo) Yardımcılığı": ["Kargo Organizasyonel Gelişim Müdürlüğü", "Kargo İnsan Kaynakları Müdürlüğü"]
          };
+         function switchTab(tab) {
+             const createBtn = document.getElementById("tabCreateBtn");
+             const cancelBtn = document.getElementById("tabCancelBtn");
+             const createContent = document.getElementById("tabCreateContent");
+             const cancelContent = document.getElementById("tabCancelContent");
+             if (tab === 'create') {
+                 createBtn.className = "pb-2 px-3 text-red-600 border-b-2 border-red-600 flex items-center space-x-1.5 transition font-semibold";
+                 cancelBtn.className = "pb-2 px-3 text-slate-500 hover:text-slate-800 flex items-center space-x-1.5 transition";
+                 createContent.classList.remove("hidden");
+                 cancelContent.classList.add("hidden");
+             } else {
+                 cancelBtn.className = "pb-2 px-3 text-red-600 border-b-2 border-red-600 flex items-center space-x-1.5 transition font-semibold";
+                 createBtn.className = "pb-2 px-3 text-slate-500 hover:text-slate-800 flex items-center space-x-1.5 transition";
+                 cancelContent.classList.remove("hidden");
+                 createContent.classList.add("hidden");
+             }
+         }
          function updateMudurlukOptions() {
              const b = document.getElementById("baskanlik").value;
              const m = document.getElementById("mudurluk");
@@ -636,6 +718,36 @@ async def index():
                      selectedDates.clear();
                      document.getElementById("selectedCountBadge").innerText = "0 Gün Seçildi";
                      document.getElementById("resForm").reset();
+                     loadMonthAvailability();
+                 } else {
+                     alertBox.innerHTML = result.message || "Bir hata oluştu.";
+                     alertBox.classList.remove("hidden");
+                     alertBox.classList.add("bg-rose-100", "text-rose-800", "border", "border-rose-300");
+                 }
+             } catch (e) {
+                 alertBox.innerText = "Bağlantı hatası oluştu.";
+                 alertBox.classList.remove("hidden");
+                 alertBox.classList.add("bg-rose-100", "text-rose-800", "border", "border-rose-300");
+             }
+         }
+         async function handleCancel(event) {
+             event.preventDefault();
+             const alertBox = document.getElementById("cancelAlertBox");
+             alertBox.className = "mt-4 hidden p-3 rounded-lg text-xs font-medium";
+             const formData = new FormData();
+             formData.append("pnr", document.getElementById("cancel_pnr").value);
+             formData.append("sicil", document.getElementById("cancel_sicil").value);
+             try {
+                 const response = await fetch("/api/cancel-reservation", {
+                     method: "POST",
+                     body: formData
+                 });
+                 const result = await response.json();
+                 if (response.ok) {
+                     alertBox.innerHTML = result.message;
+                     alertBox.classList.remove("hidden");
+                     alertBox.classList.add("bg-emerald-100", "text-emerald-800", "border", "border-emerald-300");
+                     document.getElementById("cancelForm").reset();
                      loadMonthAvailability();
                  } else {
                      alertBox.innerHTML = result.message || "Bir hata oluştu.";
