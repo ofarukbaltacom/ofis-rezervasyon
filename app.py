@@ -2,13 +2,16 @@ from datetime import datetime, timedelta
 import csv
 import io
 import json
+import os
 import random
 import string
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 import sqlite3
 app = FastAPI(title="Uydu Ofis Rezervasyon Portalı")
-DB_FILE = "reservations.db"
+# Veritabanının her zaman script ile aynı klasörde kalıcı olması için mutlak yol (absolute path) kullanıyoruz
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_FILE = os.path.join(BASE_DIR, "reservations.db")
 ADMIN_PASSWORD = "kogm2071"
 DEFAULT_CAPACITIES = {
    "Atatürk Havalimanı": 20,
@@ -240,16 +243,13 @@ async def change_reservation_day(
 ):
  conn = get_db()
  cursor = conn.cursor()
- # Kullanıcının bu PNR ve sicile ait mevcut rezervasyonlarını çek (değiştirilecek ID hariç)
  cursor.execute(
      "SELECT location, res_date FROM reservations WHERE pnr = ? AND sicil = ?"
      " AND id != ?",
      (pnr.strip().upper(), sicil.strip(), old_id),
  )
  existing_res = cursor.fetchall()
- # Lokasyon kontrolü (aynı PNR içindeki tüm kayıtlar aynı lokasyonda olmalı)
  location = existing_res[0][0] if existing_res else "Atatürk Havalimanı"
- # Haftalık 2 gün kuralı kontrolü
  all_dates_for_check = [r[1] for r in existing_res] + [new_date]
  for week_name, days in SEPTEMBER_2026_WEEKS.items():
    count_in_week = sum(1 for d in all_dates_for_check if d in days)
@@ -264,7 +264,6 @@ async def change_reservation_day(
              )
          },
      )
- # Yeni tarihin kontenjan kontrolü
  cursor.execute(
      "SELECT capacity FROM custom_capacities WHERE location = ? AND res_date ="
      " ?",
@@ -285,7 +284,6 @@ async def change_reservation_day(
            "message": f"Seçtiğiniz {new_date} tarihi için kontenjan dolmuştur!"
        },
    )
- # Kişinin aynı tarihe başka kaydı var mı kontrolü
  cursor.execute(
      "SELECT id FROM reservations WHERE sicil = ? AND res_date = ?",
      (sicil.strip(), new_date),
@@ -301,8 +299,10 @@ async def change_reservation_day(
            )
        },
    )
- # Eski kaydı sil ve yeni tarihi aynı PNR ve sicil bilgileriyle ekle
- cursor.execute("SELECT name, baskanlik, mudurluk FROM reservations WHERE id = ?", (old_id,))
+ cursor.execute(
+     "SELECT name, baskanlik, mudurluk FROM reservations WHERE id = ?",
+     (old_id,),
+ )
  user_info = cursor.fetchone()
  if not user_info:
    conn.close()
@@ -889,12 +889,9 @@ async def index():
                  const res = await fetch(`/api/month-availability?location=${encodeURIComponent(locationName)}`);
                  const availability = await res.json();
                  selectEl.innerHTML = '<option value="">Yeni Tarih Seçiniz</option>';
-                 // Aktif kullanıcının diğer seçili günlerini bul (bu ID dışındakiler)
                  const otherDates = activeLookupData.filter(item => item.id !== id).map(item => item.res_date);
                  for (const [dateStr, info] of Object.entries(availability)) {
-                     // Eğer kontenjan doluysa veya kullanıcı zaten o gün rezerve etmişse atla
                      if (info.remaining <= 0 || otherDates.includes(dateStr)) continue;
-                     // Haftalık 2 gün kuralı kontrolü (JS tarafı)
                      let weekKey = null;
                      for (const [wTitle, wDays] of Object.entries(weeksData)) {
                          if (wDays.includes(dateStr)) { weekKey = wTitle; break; }
@@ -902,7 +899,7 @@ async def index():
                      if (weekKey) {
                          const daysInThisWeek = weeksData[weekKey];
                          const countInWeek = otherDates.filter(d => daysInThisWeek.includes(d)).length;
-                         if (countInWeek >= 2) continue; // Bu haftada zaten 2 gün hakkı dolmuş
+                         if (countInWeek >= 2) continue;
                      }
                      const opt = document.createElement("option");
                      opt.value = dateStr;
