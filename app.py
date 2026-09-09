@@ -231,15 +231,103 @@ async def lookup_reservation(pnr: str = Form(...), sicil: str = Form(...)):
  ]
  return JSONResponse(content=reservations)
 
-@app.post("/api/cancel-single-reservation")
-async def cancel_single_reservation(id: int = Form(...)):
+@app.post("/api/change-reservation-day")
+async def change_reservation_day(
+   old_id: int = Form(...),
+   new_date: str = Form(...),
+   pnr: str = Form(...),
+   sicil: str = Form(...),
+):
  conn = get_db()
  cursor = conn.cursor()
- cursor.execute("DELETE FROM reservations WHERE id = ?", (id,))
+ # Kullanıcının bu PNR ve sicile ait mevcut rezervasyonlarını çek (değiştirilecek ID hariç)
+ cursor.execute(
+     "SELECT location, res_date FROM reservations WHERE pnr = ? AND sicil = ?"
+     " AND id != ?",
+     (pnr.strip().upper(), sicil.strip(), old_id),
+ )
+ existing_res = cursor.fetchall()
+ # Lokasyon kontrolü (aynı PNR içindeki tüm kayıtlar aynı lokasyonda olmalı)
+ location = existing_res[0][0] if existing_res else "Atatürk Havalimanı"
+ # Haftalık 2 gün kuralı kontrolü
+ all_dates_for_check = [r[1] for r in existing_res] + [new_date]
+ for week_name, days in SEPTEMBER_2026_WEEKS.items():
+   count_in_week = sum(1 for d in all_dates_for_check if d in days)
+   if count_in_week > 2:
+     conn.close()
+     return JSONResponse(
+         status_code=400,
+         content={
+             "message": (
+                 f"{week_name} içerisinde en fazla 2 gün seçebilirsiniz! Bu"
+                 " işlem kuralı ihlal ediyor."
+             )
+         },
+     )
+ # Yeni tarihin kontenjan kontrolü
+ cursor.execute(
+     "SELECT capacity FROM custom_capacities WHERE location = ? AND res_date ="
+     " ?",
+     (location, new_date),
+ )
+ custom_row = cursor.fetchone()
+ max_capacity = custom_row[0] if custom_row else DEFAULT_CAPACITIES[location]
+ cursor.execute(
+     "SELECT COUNT(*) FROM reservations WHERE location = ? AND res_date = ?",
+     (location, new_date),
+ )
+ current_count = cursor.fetchone()[0]
+ if current_count >= max_capacity:
+   conn.close()
+   return JSONResponse(
+       status_code=400,
+       content={
+           "message": f"Seçtiğiniz {new_date} tarihi için kontenjan dolmuştur!"
+       },
+   )
+ # Kişinin aynı tarihe başka kaydı var mı kontrolü
+ cursor.execute(
+     "SELECT id FROM reservations WHERE sicil = ? AND res_date = ?",
+     (sicil.strip(), new_date),
+ )
+ if cursor.fetchone():
+   conn.close()
+   return JSONResponse(
+       status_code=400,
+       content={
+           "message": (
+               f"Bu tarihe ({new_date}) ait zaten aktif bir kaydınız"
+               " bulunmaktadır."
+           )
+       },
+   )
+ # Eski kaydı sil ve yeni tarihi aynı PNR ve sicil bilgileriyle ekle
+ cursor.execute("SELECT name, baskanlik, mudurluk FROM reservations WHERE id = ?", (old_id,))
+ user_info = cursor.fetchone()
+ if not user_info:
+   conn.close()
+   return JSONResponse(
+       status_code=400, content={"message": "Eski rezervasyon kaydı bulunamadı."}
+   )
+ name, baskanlik, mudurluk = user_info
+ cursor.execute("DELETE FROM reservations WHERE id = ?", (old_id,))
+ cursor.execute(
+     "INSERT INTO reservations (pnr, sicil, name, baskanlik, mudurluk,"
+     " location, res_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
+     (
+         pnr.strip().upper(),
+         sicil.strip(),
+         name,
+         baskanlik,
+         mudurluk,
+         location,
+         new_date,
+     ),
+ )
  conn.commit()
  conn.close()
  return JSONResponse(
-     content={"message": "Seçilen gün rezervasyonu iptal edildi."}
+     content={"message": "Rezervasyon gününüz başarıyla güncellendi."}
  )
 
 # ----------------- ADMIN API ENDPOINTS -----------------
@@ -402,7 +490,7 @@ async def index():
 <i class="fa-regular fa-calendar-check"></i> <span>Rezervasyon Yap</span>
 </button>
 <button onclick="switchTab('cancel')" id="tabCancelBtn" class="pb-2 px-3 text-slate-500 hover:text-slate-800 flex items-center space-x-1.5 transition">
-<i class="fa-solid fa-ban"></i> <span>Rezervasyon İptal Et</span>
+<i class="fa-solid fa-right-left"></i> <span>Gün Değiştir / Yönet</span>
 </button>
 </div>
 <!-- Rezervasyon Formu -->
@@ -459,10 +547,10 @@ async def index():
 </form>
 <div id="alertBox" class="mt-4 hidden p-3 rounded-lg text-xs font-medium"></div>
 </div>
-<!-- İptal / Gün Yönetimi Formu -->
+<!-- Gün Değiştirme / Yönetim Formu -->
 <div id="tabCancelContent" class="hidden space-y-4">
 <form id="cancelForm" onsubmit="handleLookup(event)" class="space-y-3">
-<p class="text-xs text-slate-500">Rezervasyonlarınızı görüntülemek ve dilediğiniz günü iptal etmek için PNR kodunuzu ve sicilinizi giriniz.</p>
+<p class="text-xs text-slate-500">Rezervasyon gününüzü değiştirmek için PNR kodunuzu ve sicilinizi girip sorgulayınız.</p>
 <div>
 <label class="block text-xs font-bold text-slate-600 uppercase mb-1">PNR Kodu</label>
 <input type="text" id="cancel_pnr" required placeholder="Örn: TK-123456-ABCD"
@@ -480,10 +568,20 @@ async def index():
 </button>
 </form>
 <div id="cancelAlertBox" class="mt-2 hidden p-3 rounded-lg text-xs font-medium"></div>
-<!-- Sorgulanan Günler Listesi -->
+<!-- Sorgulanan Günler Listesi ve Değiştirme Paneli -->
 <div id="lookupResultContainer" class="hidden space-y-2 pt-2 border-t">
-<h4 class="text-xs font-bold text-slate-700 uppercase">Seçili Rezervasyon Günleri:</h4>
+<h4 class="text-xs font-bold text-slate-700 uppercase">Mevcut Rezervasyon Günleriniz:</h4>
 <div id="reservationDaysList" class="space-y-2 max-h-48 overflow-y-auto"></div>
+</div>
+<!-- Yeni Tarih Seçim Alanı (Gün Değiştirme Modu İçin) -->
+<div id="changeDateContainer" class="hidden space-y-2 pt-3 border-t bg-amber-50/60 p-3 rounded-lg border border-amber-200">
+<p class="text-xs font-bold text-amber-900" id="changeTitle"></p>
+<label class="block text-xs font-semibold text-slate-700">Yeni Tarih Seçin:</label>
+<select id="newDateSelect" class="w-full px-2 py-1.5 border border-slate-300 rounded text-xs bg-white"></select>
+<div class="flex space-x-2 pt-1">
+<button onclick="confirmDateChange()" class="flex-1 bg-red-600 hover:bg-red-700 text-white text-xs font-medium py-1.5 rounded transition">Değişikliği Onayla</button>
+<button onclick="cancelDateChangeMode()" class="bg-slate-300 hover:bg-slate-400 text-slate-800 text-xs py-1.5 px-3 rounded transition">İptal</button>
+</div>
 </div>
 </div>
 <div class="bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs text-slate-600 space-y-1">
@@ -574,6 +672,8 @@ async def index():
 <script>
          let currentAdminPass = "";
          let selectedDates = new Set();
+         let activeLookupData = [];
+         let selectedOldIdForChange = null;
          const weeksData = {
              "1. Hafta (1 - 4 Eylül)": ["2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04"],
              "2. Hafta (7 - 11 Eylül)": ["2026-09-07", "2026-09-08", "2026-09-09", "2026-09-10", "2026-09-11"],
@@ -715,7 +815,7 @@ async def index():
                  });
                  const result = await response.json();
                  if (response.ok) {
-                     alertBox.innerHTML = `${result.message}<br><br>🔑 <b>Atanan PNR Kodunuz:</b> <span class="bg-white px-2 py-1 rounded border font-mono text-red-600 font-bold select-all">${result.pnr}</span><br><span class='text-[11px] text-emerald-700 mt-1 block'>* Bu kodu ve sicilinizi kullanarak istediğiniz zaman rezervasyonunuzu yönetebilir/iptal edebilirsiniz.</span>`;
+                     alertBox.innerHTML = `${result.message}<br><br>🔑 <b>Atanan PNR Kodunuz:</b> <span class="bg-white px-2 py-1 rounded border font-mono text-red-600 font-bold select-all">${result.pnr}</span><br><span class='text-[11px] text-emerald-700 mt-1 block'>* Bu kodu ve sicilinizi kullanarak istediğiniz zaman rezervasyonunuzu yönetebilir/değiştirebilirsiniz.</span>`;
                      alertBox.classList.remove("hidden");
                      alertBox.classList.add("bg-emerald-100", "text-emerald-800", "border", "border-emerald-300");
                      selectedDates.clear();
@@ -741,6 +841,7 @@ async def index():
              alertBox.className = "mt-2 hidden p-3 rounded-lg text-xs font-medium";
              container.classList.add("hidden");
              listDiv.innerHTML = "";
+             cancelDateChangeMode();
              const formData = new FormData();
              formData.append("pnr", document.getElementById("cancel_pnr").value);
              formData.append("sicil", document.getElementById("cancel_sicil").value);
@@ -751,6 +852,7 @@ async def index():
                  });
                  const data = await response.json();
                  if (response.ok) {
+                     activeLookupData = data;
                      container.classList.remove("hidden");
                      data.forEach(item => {
                          const row = document.createElement("div");
@@ -760,8 +862,8 @@ async def index():
 <span class="font-bold text-slate-800">${item.res_date}</span>
 <span class="text-slate-500 block text-[10px]">${item.location}</span>
 </div>
-<button onclick="cancelSingle(${item.id})" class="bg-rose-600 hover:bg-rose-700 text-white px-2.5 py-1 rounded transition text-[11px]">
-                                 Bu Günü İptal Et
+<button type="button" onclick="initChangeDate(${item.id}, '${item.res_date}', '${item.location}')" class="bg-amber-600 hover:bg-amber-700 text-white px-2.5 py-1 rounded transition text-[11px]">
+                                 Günü Değiştir
 </button>
                          `;
                          listDiv.appendChild(row);
@@ -777,21 +879,68 @@ async def index():
                  alertBox.classList.add("bg-rose-100", "text-rose-800", "border", "border-rose-300");
              }
          }
-         async function cancelSingle(id) {
-             if (!confirm("Seçilen günün rezervasyonunu iptal etmek istediğinize emin misiniz?")) return;
-             const formData = new FormData();
-             formData.append("id", id);
+         async function initChangeDate(id, currentDate, locationName) {
+             selectedOldIdForChange = id;
+             document.getElementById("changeTitle").innerText = `${currentDate} tarihini değiştirmek için yeni gün seçin:`;
+             const selectEl = document.getElementById("newDateSelect");
+             selectEl.innerHTML = '<option value="">Yükleniyor...</option>';
+             document.getElementById("changeDateContainer").classList.remove("hidden");
              try {
-                 const res = await fetch("/api/cancel-single-reservation", {
+                 const res = await fetch(`/api/month-availability?location=${encodeURIComponent(locationName)}`);
+                 const availability = await res.json();
+                 selectEl.innerHTML = '<option value="">Yeni Tarih Seçiniz</option>';
+                 // Aktif kullanıcının diğer seçili günlerini bul (bu ID dışındakiler)
+                 const otherDates = activeLookupData.filter(item => item.id !== id).map(item => item.res_date);
+                 for (const [dateStr, info] of Object.entries(availability)) {
+                     // Eğer kontenjan doluysa veya kullanıcı zaten o gün rezerve etmişse atla
+                     if (info.remaining <= 0 || otherDates.includes(dateStr)) continue;
+                     // Haftalık 2 gün kuralı kontrolü (JS tarafı)
+                     let weekKey = null;
+                     for (const [wTitle, wDays] of Object.entries(weeksData)) {
+                         if (wDays.includes(dateStr)) { weekKey = wTitle; break; }
+                     }
+                     if (weekKey) {
+                         const daysInThisWeek = weeksData[weekKey];
+                         const countInWeek = otherDates.filter(d => daysInThisWeek.includes(d)).length;
+                         if (countInWeek >= 2) continue; // Bu haftada zaten 2 gün hakkı dolmuş
+                     }
+                     const opt = document.createElement("option");
+                     opt.value = dateStr;
+                     opt.innerText = `${dateStr} (Boş Kontenjan: ${info.remaining})`;
+                     selectEl.appendChild(opt);
+                 }
+             } catch (e) {
+                 selectEl.innerHTML = '<option value="">Tarihler yüklenemedi</option>';
+             }
+         }
+         function cancelDateChangeMode() {
+             selectedOldIdForChange = null;
+             document.getElementById("changeDateContainer").classList.add("hidden");
+         }
+         async function confirmDateChange() {
+             const newDate = document.getElementById("newDateSelect").value;
+             if (!newDate) {
+                 alert("Lütfen geçerli yeni bir tarih seçiniz.");
+                 return;
+             }
+             const formData = new FormData();
+             formData.append("old_id", selectedOldIdForChange);
+             formData.append("new_date", newDate);
+             formData.append("pnr", document.getElementById("cancel_pnr").value);
+             formData.append("sicil", document.getElementById("cancel_sicil").value);
+             try {
+                 const res = await fetch("/api/change-reservation-day", {
                      method: "POST",
                      body: formData
                  });
+                 const result = await res.json();
                  if (res.ok) {
-                     alert("Rezervasyon günü başarıyla iptal edildi.");
+                     alert(result.message);
+                     cancelDateChangeMode();
                      document.getElementById("cancelForm").requestSubmit();
                      loadMonthAvailability();
                  } else {
-                     alert("İptal sırasında bir hata oluştu.");
+                     alert(result.message || "Güncelleme sırasında bir hata oluştu.");
                  }
              } catch (e) {
                  alert("Bağlantı hatası oluştu.");
