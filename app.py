@@ -135,7 +135,6 @@ async def make_reservation(
    return JSONResponse(
        status_code=400, content={"message": "Lütfen en az bir tarih seçiniz!"}
    )
- # Haftalık 2 gün kuralı sunucu taraflı kontrolü
  for week_name, days in SEPTEMBER_2026_WEEKS.items():
    count_in_week = sum(1 for d in selected_dates if d in days)
    if count_in_week > 2:
@@ -150,7 +149,6 @@ async def make_reservation(
      )
  conn = get_db()
  cursor = conn.cursor()
- # Mükerrer Kayıt & Kontenjan Kontrolleri
  errors = []
  valid_dates = []
  for res_date in selected_dates:
@@ -185,9 +183,7 @@ async def make_reservation(
    return JSONResponse(
        status_code=400, content={"message": " <br>".join(errors)}
    )
- # Sicile özel PNR üretimi
  pnr_code = generate_pnr(sicil)
- # Başarılı Olan Tarihleri Ekle
  for res_date in valid_dates:
    cursor.execute(
        "INSERT INTO reservations (pnr, sicil, name, baskanlik, mudurluk,"
@@ -204,22 +200,24 @@ async def make_reservation(
    )
  conn.commit()
  conn.close()
- msg = f"{len(valid_dates)} adet gün için rezervasyonunuz başarıyla oluşturuldu. <br><br>🔑 <b>PNR Kodunuz:</b> <span class='text-sm underline'>{pnr_code}</span> (Bu kodu kullanarak rezervasyonunuzu iptal edebilirsiniz.)"
+ # Yanıt olarak PNR kodunu da açıkça dönüyoruz
+ msg = f"{len(valid_dates)} adet gün için rezervasyonunuz başarıyla oluşturuldu."
  if errors:
    msg += f"<br><small class='text-amber-700'>Uyarı: {', '.join(errors)}</small>"
- return JSONResponse(content={"message": msg})
+ return JSONResponse(content={"message": msg, "pnr": pnr_code})
 
-@app.post("/api/cancel-reservation")
-async def cancel_reservation(pnr: str = Form(...), sicil: str = Form(...)):
+@app.post("/api/lookup-reservation")
+async def lookup_reservation(pnr: str = Form(...), sicil: str = Form(...)):
  conn = get_db()
  cursor = conn.cursor()
  cursor.execute(
-     "SELECT id FROM reservations WHERE pnr = ? AND sicil = ?",
+     "SELECT id, location, res_date FROM reservations WHERE pnr = ? AND sicil"
+     " = ?",
      (pnr.strip().upper(), sicil.strip()),
  )
  rows = cursor.fetchall()
+ conn.close()
  if not rows:
-   conn.close()
    return JSONResponse(
        status_code=400,
        content={
@@ -229,19 +227,20 @@ async def cancel_reservation(pnr: str = Form(...), sicil: str = Form(...)):
            )
        },
    )
- cursor.execute(
-     "DELETE FROM reservations WHERE pnr = ? AND sicil = ?",
-     (pnr.strip().upper(), sicil.strip()),
- )
+ reservations = [
+     {"id": r[0], "location": r[1], "res_date": r[2]} for r in rows
+ ]
+ return JSONResponse(content=reservations)
+
+@app.post("/api/cancel-single-reservation")
+async def cancel_single_reservation(id: int = Form(...)):
+ conn = get_db()
+ cursor = conn.cursor()
+ cursor.execute("DELETE FROM reservations WHERE id = ?", (id,))
  conn.commit()
  conn.close()
  return JSONResponse(
-     content={
-         "message": (
-             f"**{pnr.strip().upper()}** numaralı tüm rezervasyonlarınız"
-             " başarıyla iptal edilmiştir."
-         )
-     }
+     content={"message": "Seçilen gün rezervasyonu iptal edildi."}
  )
 
 # ----------------- ADMIN API ENDPOINTS -----------------
@@ -461,27 +460,32 @@ async def index():
 </form>
 <div id="alertBox" class="mt-4 hidden p-3 rounded-lg text-xs font-medium"></div>
 </div>
-<!-- İptal Formu -->
+<!-- İptal / Gün Yönetimi Formu -->
 <div id="tabCancelContent" class="hidden space-y-4">
-<form id="cancelForm" onsubmit="handleCancel(event)" class="space-y-4">
-<p class="text-xs text-slate-500">Rezervasyonunuzu iptal etmek için tarafınıza verilen <b>PNR kodunu</b> ve <b>sicil numaranızı</b> giriniz.</p>
+<form id="cancelForm" onsubmit="handleLookup(event)" class="space-y-3">
+<p class="text-xs text-slate-500">Rezervasyonlarınızı görüntülemek ve dilediğiniz günü iptal etmek için PNR kodunuzu ve sicilinizi giriniz.</p>
 <div>
 <label class="block text-xs font-bold text-slate-600 uppercase mb-1">PNR Kodu</label>
-<input type="text" id="cancel_pnr" required placeholder="Örn: TK-123456-ABCD"
+<input type="text" id="cancel_pnr" required placeholder="Örn: TK-998877-X9Z1"
                          class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-sm uppercase">
 </div>
 <div>
 <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Sicil No</label>
-<input type="text" id="cancel_sicil" required placeholder="Örn: 123456"
+<input type="text" id="cancel_sicil" required placeholder="Örn: 998877"
                          class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-sm">
 </div>
 <button type="submit"
                      class="w-full bg-slate-800 hover:bg-slate-900 text-white font-medium py-2.5 px-4 rounded-lg transition duration-150 flex items-center justify-center space-x-2 text-sm shadow cursor-pointer">
-<i class="fa-solid fa-ban"></i>
-<span>Rezervasyonu İptal Et</span>
+<i class="fa-solid fa-search"></i>
+<span>Rezervasyonları Sorgula</span>
 </button>
 </form>
-<div id="cancelAlertBox" class="mt-4 hidden p-3 rounded-lg text-xs font-medium"></div>
+<div id="cancelAlertBox" class="mt-2 hidden p-3 rounded-lg text-xs font-medium"></div>
+<!-- Sorgulanan Günler Listesi -->
+<div id="lookupResultContainer" class="hidden space-y-2 pt-2 border-t">
+<h4 class="text-xs font-bold text-slate-700 uppercase">Seçili Rezervasyon Günleri:</h4>
+<div id="reservationDaysList" class="space-y-2 max-h-48 overflow-y-auto"></div>
+</div>
 </div>
 <div class="bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs text-slate-600 space-y-1">
 <p class="font-bold text-slate-700"><i class="fa-solid fa-circle-info text-blue-500"></i> Kurallar:</p>
@@ -712,7 +716,7 @@ async def index():
                  });
                  const result = await response.json();
                  if (response.ok) {
-                     alertBox.innerHTML = result.message;
+                     alertBox.innerHTML = `${result.message}<br><br>🔑 <b>Atanan PNR Kodunuz:</b> <span class="bg-white px-2 py-1 rounded border font-mono text-red-600 font-bold select-all">${result.pnr}</span><br><span class='text-[11px] text-emerald-700 mt-1 block'>* Bu kodu ve sicilinizi kullanarak istediğiniz zaman rezervasyonunuzu yönetebilir/iptal edebilirsiniz.</span>`;
                      alertBox.classList.remove("hidden");
                      alertBox.classList.add("bg-emerald-100", "text-emerald-800", "border", "border-emerald-300");
                      selectedDates.clear();
@@ -730,27 +734,41 @@ async def index():
                  alertBox.classList.add("bg-rose-100", "text-rose-800", "border", "border-rose-300");
              }
          }
-         async function handleCancel(event) {
+         async function handleLookup(event) {
              event.preventDefault();
              const alertBox = document.getElementById("cancelAlertBox");
-             alertBox.className = "mt-4 hidden p-3 rounded-lg text-xs font-medium";
+             const container = document.getElementById("lookupResultContainer");
+             const listDiv = document.getElementById("reservationDaysList");
+             alertBox.className = "mt-2 hidden p-3 rounded-lg text-xs font-medium";
+             container.classList.add("hidden");
+             listDiv.innerHTML = "";
              const formData = new FormData();
              formData.append("pnr", document.getElementById("cancel_pnr").value);
              formData.append("sicil", document.getElementById("cancel_sicil").value);
              try {
-                 const response = await fetch("/api/cancel-reservation", {
+                 const response = await fetch("/api/lookup-reservation", {
                      method: "POST",
                      body: formData
                  });
-                 const result = await response.json();
+                 const data = await response.json();
                  if (response.ok) {
-                     alertBox.innerHTML = result.message;
-                     alertBox.classList.remove("hidden");
-                     alertBox.classList.add("bg-emerald-100", "text-emerald-800", "border", "border-emerald-300");
-                     document.getElementById("cancelForm").reset();
-                     loadMonthAvailability();
+                     container.classList.remove("hidden");
+                     data.forEach(item => {
+                         const row = document.createElement("div");
+                         row.className = "flex items-center justify-between p-2 bg-slate-50 border rounded text-xs";
+                         row.innerHTML = `
+<div>
+<span class="font-bold text-slate-800">${item.res_date}</span>
+<span class="text-slate-500 block text-[10px]">${item.location}</span>
+</div>
+<button onclick="cancelSingle(${item.id})" class="bg-rose-600 hover:bg-rose-700 text-white px-2.5 py-1 rounded transition text-[11px]">
+                                 Bu Günü İptal Et
+</button>
+                         `;
+                         listDiv.appendChild(row);
+                     });
                  } else {
-                     alertBox.innerHTML = result.message || "Bir hata oluştu.";
+                     alertBox.innerHTML = data.message || "Kayıt bulunamadı.";
                      alertBox.classList.remove("hidden");
                      alertBox.classList.add("bg-rose-100", "text-rose-800", "border", "border-rose-300");
                  }
@@ -758,6 +776,26 @@ async def index():
                  alertBox.innerText = "Bağlantı hatası oluştu.";
                  alertBox.classList.remove("hidden");
                  alertBox.classList.add("bg-rose-100", "text-rose-800", "border", "border-rose-300");
+             }
+         }
+         async function cancelSingle(id) {
+             if (!confirm("Seçilen günün rezervasyonunu iptal etmek istediğinize emin misiniz?")) return;
+             const formData = new FormData();
+             formData.append("id", id);
+             try {
+                 const res = await fetch("/api/cancel-single-reservation", {
+                     method: "POST",
+                     body: formData
+                 });
+                 if (res.ok) {
+                     alert("Rezervasyon günü başarıyla iptal edildi.");
+                     document.getElementById("cancelForm").requestSubmit();
+                     loadMonthAvailability();
+                 } else {
+                     alert("İptal sırasında bir hata oluştu.");
+                 }
+             } catch (e) {
+                 alert("Bağlantı hatası oluştu.");
              }
          }
          function toggleAdminModal() {
@@ -813,7 +851,7 @@ async def index():
          }
          async function setCustomCapacity() {
              const loc = document.getElementById("adminLoc").value;
-             const date = document.getElementById("adminDate").value;
+             const date = document.getElementById("adminDate">value;
              const cap = document.getElementById("adminCap").value;
              if (!cap) return alert("Lütfen geçerli bir kapasite girin.");
              const formData = new FormData();
