@@ -235,7 +235,7 @@ async def make_reservation(
 
   msg = f"{len(valid_items)} adet gün için rezervasyonunuz başarıyla oluşturuldu."
   if errors:
-    msg += f"<br><small class='text-amber-700'>Uyari: {', '.join(errors)}</small>"
+    msg += f"<br><small class='text-amber-700'>Uyarı: {', '.join(errors)}</small>"
 
   return JSONResponse(content={"message": msg, "pnr": pnr_code})
 
@@ -399,17 +399,34 @@ async def admin_login(password: str = Form(...)):
 
 
 @app.get("/api/admin/reservations")
-async def get_all_reservations(password: str):
+async def get_all_reservations(password: str, search: str = ""):
   if password != ADMIN_PASSWORD:
     return JSONResponse(
         status_code=401, content={"message": "Yetkisiz erişim!"}
     )
   conn = get_db()
   cursor = conn.cursor()
-  cursor.execute(
-      "SELECT id, pnr, sicil, name, baskanlik, mudurluk, location, res_date,"
-      " created_at FROM reservations ORDER BY res_date DESC, id DESC"
-  )
+
+  if search:
+    search_term = f"%{search.strip()}%"
+    cursor.execute(
+        """
+            SELECT id, pnr, sicil, name, baskanlik, mudurluk, location, res_date, created_at 
+            FROM reservations 
+            WHERE sicil LIKE ? OR name LIKE ? 
+            ORDER BY res_date DESC, id DESC
+        """,
+        (search_term, search_term),
+    )
+  else:
+    cursor.execute(
+        """
+            SELECT id, pnr, sicil, name, baskanlik, mudurluk, location, res_date, created_at 
+            FROM reservations 
+            ORDER BY res_date DESC, id DESC
+        """
+    )
+
   rows = cursor.fetchall()
   conn.close()
   reservations = [
@@ -441,6 +458,22 @@ async def delete_reservation(id: int = Form(...), password: str = Form(...)):
   conn.commit()
   conn.close()
   return JSONResponse(content={"message": "Rezervasyon silindi."})
+
+
+@app.post("/api/admin/delete-all-reservations")
+async def delete_all_reservations(password: str = Form(...)):
+  if password != ADMIN_PASSWORD:
+    return JSONResponse(
+        status_code=401, content={"message": "Yetkisiz erişim!"}
+    )
+  conn = get_db()
+  cursor = conn.cursor()
+  cursor.execute("DELETE FROM reservations")
+  conn.commit()
+  conn.close()
+  return JSONResponse(
+      content={"message": "Tüm rezervasyon kayıtları başarıyla silindi."}
+  )
 
 
 @app.post("/api/admin/set-capacity")
@@ -539,7 +572,7 @@ async def import_excel(password: str = Form(...), file: UploadFile = File(...)):
         if len(row_list) < 5:
           continue
 
-        # Sütun sırası: [0]: id (atlandı), [1]: sicil, [2]: ad_soyad, [3]: baskanlik, [4]: mudurluk, [5+]: haftalar
+        # Sütun sırası (ID göz ardı edilerek): [1]: sicil, [2]: ad_soyad, [3]: baskanlik, [4]: mudurluk, [5+]: haftalar
         sicil = str(row[1]).strip() if row[1] is not None else ""
         name = str(row[2]).strip() if row[2] is not None else "Personel"
         baskanlik = (
@@ -558,7 +591,6 @@ async def import_excel(password: str = Form(...), file: UploadFile = File(...)):
 
         pnr = generate_pnr(sicil)
 
-        # 5. indexten itibaren haftalık sütunları tarayalım
         for col_idx in range(5, len(row)):
           cell_val = row[col_idx]
           if cell_val is None:
