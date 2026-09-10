@@ -479,25 +479,29 @@ async def import_excel(password: str = Form(...), file: UploadFile = File(...)):
    conn = get_db()
    cursor = conn.cursor()
    imported_count = 0
-   # Başlık satırını atlayarak veri satırlarını tarıyoruz (min_row=2)
    for row in sheet.iter_rows(min_row=2, values_only=True):
      if not row or all(cell is None for cell in row):
        continue
-     # Her hücreyi birleştirip satırdaki tarih/ofis seçimlerini toplu arıyoruz
      row_full_text = " ".join([str(c) for c in row if c is not None])
-     # Hücrelerdeki "DD.MM.YYYY Gün (Ofis Adı)" kalıplarını regex ile tek tek ayıklıyoruz
-     # Örn: 01.09.2026 Salı (Atatürk Havalimanı) veya 04.09.2026 Cuma (Libadiye Teknoloji Ofisi)
-     matches = re.findall(
-         r"(\d{2}\.\d{2}\.\d{4})\s+[^\(\)]+\(([^)]+)\)", row_full_text
-     )
-     if not matches:
+     # Güvenli ve hızlı string tarama (Parantez içi ofis ve 10 karakterli tarih yakalama)
+     chunks = row_full_text.split(")")
+     extracted_items = []
+     for chunk in chunks:
+       if "(" in chunk:
+         parts = chunk.split("(")
+         date_part = parts[0].strip()
+         loc_part = parts[1].strip()
+         # Tarih başını yakala (örn: 01.09.2026)
+         for word in date_part.split():
+           if "." in word and len(word) >= 8:
+             extracted_items.append((word, loc_part))
+             break
+     if not extracted_items:
        continue
-     # Bu satırdaki kişiye ait varsayılan bilgiler (Eğer sicil/isim ayrı sütunlarda değilse metinden türetiyoruz)
      sicil = f"99{random.randint(1000,9999)}"
      name = "Personel"
      baskanlik = "Kargo Operasyon Başkanlığı"
      mudurluk = "KARGO OPERASYONEL PERFORMANS MD."
-     # Satır hücrelerinde sicil veya isim geçiyorsa yakalayalım
      for cell in row:
        if cell is not None:
          val_str = str(cell).strip()
@@ -505,27 +509,21 @@ async def import_excel(password: str = Form(...), file: UploadFile = File(...)):
            sicil = val_str
          elif (
              len(val_str) > 3
-             and not "@" in val_str
-             and not "(" in val_str
-             and not "Hafta" in val_str
+             and "@" not in val_str
+             and "(" not in val_str
+             and "Hafta" not in val_str
          ):
-           if not any(
-               char.isdigit() for char in val_str
-           ):  # Rakam içermeyen ad soyad
+           if not any(char.isdigit() for char in val_str):
              name = val_str
      pnr = generate_pnr(sicil)
-     # Bulunan her tarih ve ofis ikilisi için rezervasyon ekle
-     for date_str, loc_raw in matches:
-       # Tarih formatını YYYY-MM-DD formata çevir
+     for date_str, loc_raw in extracted_items:
        try:
-         dt_obj = datetime.strptime(date_str, "%d.%m.%Y")
+         dt_obj = datetime.strptime(date_str[:10], "%d.%m.%Y")
          res_date = dt_obj.strftime("%Y-%m-%d")
        except:
          continue
-       # Eylül 2026 dışındaysa atla
        if not res_date.startswith("2026-09-"):
          continue
-       # Lokasyon eşleştirme
        loc_lower = loc_raw.lower()
        if (
            "libadiye" in loc_lower
@@ -536,7 +534,6 @@ async def import_excel(password: str = Form(...), file: UploadFile = File(...)):
          location = "Libadiye Teknoloji Ofisi"
        else:
          location = "Atatürk Havalimanı"
-       # Aynı kişi aynı tarihe mükerrer kayıt eklenmesin
        cursor.execute(
            "SELECT id FROM reservations WHERE sicil = ? AND res_date = ?",
            (sicil, res_date),
@@ -554,7 +551,7 @@ async def import_excel(password: str = Form(...), file: UploadFile = File(...)):
    return JSONResponse(
        content={
            "message": (
-               f"Başarıyla {imported_count} adet rezervasyon günleri taranıp"
+               f"Başarıyla {imported_count} adet rezervasyon günü taranıp"
                " içeri aktarıldı!"
            )
        }
@@ -786,7 +783,7 @@ async def index():
 <input type="file" id="importFile" accept=".xlsx" class="text-xs border rounded p-1 bg-white flex-1">
 <button onclick="importExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-1.5 px-4 rounded-lg font-medium transition">Excel İçe Aktar</button>
 </div>
-<p class="text-[11px] text-slate-500">* Hücre içindeki tüm tarih ve ofis parantezleri (örn: 01.09.2026 Salı (Atatürk Havalimanı)) otomatik ayrıştırılıp ekilenecektir.</p>
+<p class="text-[11px] text-slate-500">* Tüm haftalık form sütunları güvenli şekilde taranıp işlenecektir.</p>
 </div>
 <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
 <h4 class="text-xs font-bold text-slate-700 uppercase mb-3 flex items-center">
