@@ -5,7 +5,7 @@ import json
 import os
 import random
 import string
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 import sqlite3
 app = FastAPI(title="Uydu Ofis Rezervasyon Portalı")
@@ -464,6 +464,74 @@ async def export_excel(password: str):
  )
  return response
 
+@app.post("/api/admin/import-excel")
+async def import_excel(password: str = Form(...), file: UploadFile = File(...)):
+ if password != ADMIN_PASSWORD:
+   return JSONResponse(
+       status_code=401, content={"message": "Yetkisiz erişim!"}
+   )
+ try:
+   content = await file.read()
+   decoded = content.decode("utf-8-sig")
+   csv_reader = csv.reader(io.StringIO(decoded), delimiter=";")
+   header = next(csv_reader, None)  # Başlığı geç
+   conn = get_db()
+   cursor = conn.cursor()
+   imported_count = 0
+   for row in csv_reader:
+     if len(row) < 7:
+       continue
+     # [ID, PNR, Sicil, AdSoyad, Baskanlik, Mudurluk, Lokasyon, Tarih, ...]
+     # Dışarıdan export edilen formatta ID başta olabilir, kontrol edelim:
+     if row[0].isdigit() and len(row) >= 8:
+       pnr = row[1].strip()
+       sicil = row[2].strip()
+       name = row[3].strip()
+       baskanlik = row[4].strip()
+       mudurluk = row[5].strip()
+       location = row[6].strip()
+       res_date = row[7].strip()
+     else:
+       pnr = row[0].strip()
+       sicil = row[1].strip()
+       name = row[2].strip()
+       baskanlik = row[3].strip()
+       mudurluk = row[4].strip()
+       location = row[5].strip()
+       res_date = row[6].strip()
+     if not pnr or pnr.startswith("ID"):
+       continue
+     if not pnr.startswith("TK-"):
+       pnr = generate_pnr(sicil)
+     # Mükerrer kayıt kontrolü (Aynı sicil aynı gün başka kayıt var mı)
+     cursor.execute(
+         "SELECT id FROM reservations WHERE sicil = ? AND res_date = ?",
+         (sicil, res_date),
+     )
+     if cursor.fetchone():
+       continue  # Zaten varsa atla
+     cursor.execute(
+         "INSERT INTO reservations (pnr, sicil, name, baskanlik, mudurluk,"
+         " location, res_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
+         (pnr, sicil, name, baskanlik, mudurluk, location, res_date),
+     )
+     imported_count += 1
+   conn.commit()
+   conn.close()
+   return JSONResponse(
+       content={
+           "message": (
+               f"Başarıyla {imported_count} adet rezervasyon sisteme"
+               " aktarıldı ve kontenjanlar güncellendi!"
+           )
+       }
+   )
+ except Exception as e:
+   return JSONResponse(
+       status_code=400,
+       content={"message": f"Dosya işlenirken hata oluştu: {str(e)}"},
+   )
+
 # ----------------- MAIN UI HTML -----------------
 @app.get("/", response_class=HTMLResponse)
 async def index():
@@ -639,6 +707,16 @@ async def index():
 <p id="adminLoginErr" class="text-xs text-rose-600 hidden"></p>
 </div>
 <div id="adminContent" class="hidden space-y-6">
+<div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+<h4 class="text-xs font-bold text-slate-700 uppercase flex items-center">
+<i class="fa-solid fa-file-excel text-emerald-600 mr-2"></i> Eski Rezervasyonları İçe Aktar (Excel / CSV)
+</h4>
+<div class="flex items-center space-x-3">
+<input type="file" id="importFile" accept=".csv" class="text-xs border rounded p-1 bg-white flex-1">
+<button onclick="importExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-1.5 px-4 rounded-lg font-medium transition">İçe Aktar</button>
+</div>
+<p class="text-[11px] text-slate-500">* Daha önce indirdiğiniz CSV formatındaki verileri yükleyerek kontenjanları anında güncelleyebilirsiniz.</p>
+</div>
 <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
 <h4 class="text-xs font-bold text-slate-700 uppercase mb-3 flex items-center">
 <i class="fa-solid fa-sliders text-red-600 mr-2"></i> Kontenjan Güncelle
@@ -1075,6 +1153,30 @@ async def index():
              await fetch("/api/admin/delete-reservation", { method: "POST", body: formData });
              loadAdminReservations();
              loadAllAvailability();
+         }
+         async function importExcel() {
+             const fileInput = document.getElementById("importFile");
+             if (fileInput.files.length === 0) {
+                 alert("Lütfen yüklenecek bir CSV dosyası seçin.");
+                 return;
+             }
+             const formData = new FormData();
+             formData.append("password", currentAdminPass);
+             formData.append("file", fileInput.files[0]);
+             try {
+                 const res = await fetch("/api/admin/import-excel", { method: "POST", body: formData });
+                 const result = await res.json();
+                 if (res.ok) {
+                     alert(result.message);
+                     fileInput.value = "";
+                     loadAdminReservations();
+                     loadAllAvailability();
+                 } else {
+                     alert(result.message || "İçe aktarma başarısız.");
+                 }
+             } catch (e) {
+                 alert("Bağlantı hatası oluştu.");
+             }
          }
          async function setCustomCapacity() {
              const loc = document.getElementById("adminLoc").value;
