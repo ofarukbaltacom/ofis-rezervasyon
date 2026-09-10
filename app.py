@@ -9,7 +9,6 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 import sqlite3
 app = FastAPI(title="Uydu Ofis Rezervasyon Portalı")
-# Veritabanının her zaman script ile aynı klasörde kalıcı olması için mutlak yol (absolute path) kullanıyoruz
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_FILE = os.path.join(BASE_DIR, "reservations.db")
 ADMIN_PASSWORD = "kogm2071"
@@ -90,33 +89,35 @@ def get_db():
  return conn
 
 # ----------------- API ENDPOINTS -----------------
-@app.get("/api/month-availability")
-async def get_month_availability(location: str):
+@app.get("/api/all-availability")
+async def get_all_availability():
  conn = get_db()
  cursor = conn.cursor()
- cursor.execute(
-     "SELECT res_date, capacity FROM custom_capacities WHERE location = ?",
-     (location,),
- )
- custom_caps = dict(cursor.fetchall())
- cursor.execute(
-     "SELECT res_date, COUNT(*) FROM reservations WHERE location = ? GROUP BY"
-     " res_date",
-     (location,),
- )
- booked_counts = dict(cursor.fetchall())
+ # Özel kapasiteler
+ cursor.execute("SELECT location, res_date, capacity FROM custom_capacities")
+ custom_caps = {}
+ for loc, d, cap in cursor.fetchall():
+   custom_caps[(loc, d)] = cap
+ # Doluluklar
+ cursor.execute("SELECT location, res_date, COUNT(*) FROM reservations GROUP BY location, res_date")
+ booked_counts = {}
+ for loc, d, cnt in cursor.fetchall():
+   booked_counts[(loc, d)] = cnt
  conn.close()
- default_cap = DEFAULT_CAPACITIES.get(location, 20)
  result = {}
- for week_name, days in SEPTEMBER_2026_WEEKS.items():
-   for d in days:
-     cap = custom_caps.get(d, default_cap)
-     booked = booked_counts.get(d, 0)
-     result[d] = {
-         "capacity": cap,
-         "booked": booked,
-         "remaining": max(0, cap - booked),
-     }
+ locations = ["Atatürk Havalimanı", "Libadiye Teknoloji Ofisi"]
+ for loc in locations:
+   result[loc] = {}
+   default_cap = DEFAULT_CAPACITIES.get(loc, 20)
+   for week_name, days in SEPTEMBER_2026_WEEKS.items():
+     for d in days:
+       cap = custom_caps.get((loc, d), default_cap)
+       booked = booked_counts.get((loc, d), 0)
+       result[loc][d] = {
+           "capacity": cap,
+           "booked": booked,
+           "remaining": max(0, cap - booked),
+       }
  return JSONResponse(content=result)
 
 @app.post("/api/reserve")
@@ -125,19 +126,19 @@ async def make_reservation(
    name: str = Form(...),
    baskanlik: str = Form(...),
    mudurluk: str = Form(...),
-   location: str = Form(...),
-   dates_json: str = Form(...),
+   selections_json: str = Form(...),
 ):
  try:
-   selected_dates = json.loads(dates_json)
+   selections = json.loads(selections_json)  # [{'location': '...', 'date': '...'}, ...]
  except:
    return JSONResponse(
-       status_code=400, content={"message": "Geçersiz tarih formatı!"}
+       status_code=400, content={"message": "Geçersiz seçim formatı!"}
    )
- if not selected_dates:
+ if not selections:
    return JSONResponse(
-       status_code=400, content={"message": "Lütfen en az bir tarih seçiniz!"}
+       status_code=400, content={"message": "Lütfen en az bir ofis ve gün seçiniz!"}
    )
+ selected_dates = [s["date"] for s in selections]
  for week_name, days in SEPTEMBER_2026_WEEKS.items():
    count_in_week = sum(1 for d in selected_dates if d in days)
    if count_in_week > 2:
@@ -145,7 +146,7 @@ async def make_reservation(
          status_code=400,
          content={
              "message": (
-                 f"{week_name} içerisinde 2 günden fazla seçim"
+                 f"{week_name} içerisinde toplamda 2 günden fazla seçim"
                  " yapamazsınız!"
              )
          },
@@ -153,41 +154,41 @@ async def make_reservation(
  conn = get_db()
  cursor = conn.cursor()
  errors = []
- valid_dates = []
- for res_date in selected_dates:
+ valid_items = []
+ for item in selections:
+   loc = item["location"]
+   res_date = item["date"]
    cursor.execute(
        "SELECT id FROM reservations WHERE LOWER(name) = LOWER(?) AND res_date"
        " = ?",
        (name.strip(), res_date),
    )
    if cursor.fetchone():
-     errors.append(f"{res_date} tarihinde zaten kaydınız bulunmaktadır.")
+     errors.append(f"{res_date} tarihinde zaten başka bir kaydınız bulunmaktadır.")
      continue
    cursor.execute(
        "SELECT capacity FROM custom_capacities WHERE location = ? AND"
        " res_date = ?",
-       (location, res_date),
+       (loc, res_date),
    )
    custom_row = cursor.fetchone()
-   max_capacity = (
-       custom_row[0] if custom_row else DEFAULT_CAPACITIES[location]
-   )
+   max_capacity = custom_row[0] if custom_row else DEFAULT_CAPACITIES[loc]
    cursor.execute(
        "SELECT COUNT(*) FROM reservations WHERE location = ? AND res_date = ?",
-       (location, res_date),
+       (loc, res_date),
    )
    current_count = cursor.fetchone()[0]
    if current_count >= max_capacity:
-     errors.append(f"{res_date} tarihi için kontenjan dolmuştur.")
+     errors.append(f"{loc} - {res_date} tarihi için kontenjan dolmuştur.")
      continue
-   valid_dates.append(res_date)
- if errors and not valid_dates:
+   valid_items.append(item)
+ if errors and not valid_items:
    conn.close()
    return JSONResponse(
        status_code=400, content={"message": " <br>".join(errors)}
    )
  pnr_code = generate_pnr(sicil)
- for res_date in valid_dates:
+ for item in valid_items:
    cursor.execute(
        "INSERT INTO reservations (pnr, sicil, name, baskanlik, mudurluk,"
        " location, res_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -197,13 +198,13 @@ async def make_reservation(
            name.strip(),
            baskanlik,
            mudurluk,
-           location,
-           res_date,
+           item["location"],
+           item["date"],
        ),
    )
  conn.commit()
  conn.close()
- msg = f"{len(valid_dates)} adet gün için rezervasyonunuz başarıyla oluşturuldu."
+ msg = f"{len(valid_items)} adet gün için rezervasyonunuz başarıyla oluşturuldu."
  if errors:
    msg += f"<br><small class='text-amber-700'>Uyarı: {', '.join(errors)}</small>"
  return JSONResponse(content={"message": msg, "pnr": pnr_code})
@@ -237,6 +238,7 @@ async def lookup_reservation(pnr: str = Form(...), sicil: str = Form(...)):
 @app.post("/api/change-reservation-day")
 async def change_reservation_day(
    old_id: int = Form(...),
+   new_location: str = Form(...),
    new_date: str = Form(...),
    pnr: str = Form(...),
    sicil: str = Form(...),
@@ -249,7 +251,6 @@ async def change_reservation_day(
      (pnr.strip().upper(), sicil.strip(), old_id),
  )
  existing_res = cursor.fetchall()
- location = existing_res[0][0] if existing_res else "Atatürk Havalimanı"
  all_dates_for_check = [r[1] for r in existing_res] + [new_date]
  for week_name, days in SEPTEMBER_2026_WEEKS.items():
    count_in_week = sum(1 for d in all_dates_for_check if d in days)
@@ -267,13 +268,13 @@ async def change_reservation_day(
  cursor.execute(
      "SELECT capacity FROM custom_capacities WHERE location = ? AND res_date ="
      " ?",
-     (location, new_date),
+     (new_location, new_date),
  )
  custom_row = cursor.fetchone()
- max_capacity = custom_row[0] if custom_row else DEFAULT_CAPACITIES[location]
+ max_capacity = custom_row[0] if custom_row else DEFAULT_CAPACITIES[new_location]
  cursor.execute(
      "SELECT COUNT(*) FROM reservations WHERE location = ? AND res_date = ?",
-     (location, new_date),
+     (new_location, new_date),
  )
  current_count = cursor.fetchone()[0]
  if current_count >= max_capacity:
@@ -281,7 +282,7 @@ async def change_reservation_day(
    return JSONResponse(
        status_code=400,
        content={
-           "message": f"Seçtiğiniz {new_date} tarihi için kontenjan dolmuştur!"
+           "message": f"Seçtiğiniz {new_location} - {new_date} tarihi için kontenjan dolmuştur!"
        },
    )
  cursor.execute(
@@ -294,7 +295,7 @@ async def change_reservation_day(
        status_code=400,
        content={
            "message": (
-               f"Bu tarihe ({new_date}) ait zaten aktif bir kaydınız"
+               f"Bu tarihe ({new_date}) ait zaten aktif başka bir kaydınız"
                " bulunmaktadır."
            )
        },
@@ -320,14 +321,14 @@ async def change_reservation_day(
          name,
          baskanlik,
          mudurluk,
-         location,
+         new_location,
          new_date,
      ),
  )
  conn.commit()
  conn.close()
  return JSONResponse(
-     content={"message": "Rezervasyon gününüz başarıyla güncellendi."}
+     content={"message": "Rezervasyon gününüz ve ofisiniz başarıyla güncellendi."}
  )
 
 # ----------------- ADMIN API ENDPOINTS -----------------
@@ -525,18 +526,10 @@ async def index():
 <option value="">Önce Başkanlık Seçiniz</option>
 </select>
 </div>
-<div>
-<label class="block text-xs font-bold text-slate-600 uppercase mb-1">Lokasyon Seçimi</label>
-<select id="location" onchange="loadMonthAvailability()"
-                         class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-sm bg-white">
-<option value="Atatürk Havalimanı">Atatürk Havalimanı (Maks 20 Kişi)</option>
-<option value="Libadiye Teknoloji Ofisi">Libadiye Teknoloji Ofisi (Maks 30 Kişi)</option>
-</select>
-</div>
 <div class="flex items-start space-x-2 pt-2">
 <input type="checkbox" id="rulesCheck" required class="mt-0.5 rounded text-red-600 focus:ring-red-500">
 <label for="rulesCheck" class="text-xs text-slate-600 leading-tight">
-                        Haftalık en fazla 2 gün seçim kuralını ve çalışma esaslarını onaylıyorum.
+                        Haftalık toplamda en fazla 2 gün seçim kuralını ve çalışma esaslarını onaylıyorum.
 </label>
 </div>
 <button type="submit" id="submitBtn"
@@ -550,7 +543,7 @@ async def index():
 <!-- Gün Değiştirme / Yönetim Formu -->
 <div id="tabCancelContent" class="hidden space-y-4">
 <form id="cancelForm" onsubmit="handleLookup(event)" class="space-y-3">
-<p class="text-xs text-slate-500">Rezervasyon gününüzü değiştirmek için PNR kodunuzu ve sicilinizi girip sorgulayınız.</p>
+<p class="text-xs text-slate-500">Rezervasyon gününüzü veya ofisinizi değiştirmek için PNR kodunuzu ve sicilinizi girip sorgulayınız.</p>
 <div>
 <label class="block text-xs font-bold text-slate-600 uppercase mb-1">PNR Kodu</label>
 <input type="text" id="cancel_pnr" required placeholder="Örn: TK-123456-ABCD"
@@ -573,11 +566,22 @@ async def index():
 <h4 class="text-xs font-bold text-slate-700 uppercase">Mevcut Rezervasyon Günleriniz:</h4>
 <div id="reservationDaysList" class="space-y-2 max-h-48 overflow-y-auto"></div>
 </div>
-<!-- Yeni Tarih Seçim Alanı (Gün Değiştirme Modu İçin) -->
+<!-- Yeni Ofis ve Tarih Seçim Alanı (Gün/Ofis Değiştirme Modu İçin) -->
 <div id="changeDateContainer" class="hidden space-y-2 pt-3 border-t bg-amber-50/60 p-3 rounded-lg border border-amber-200">
 <p class="text-xs font-bold text-amber-900" id="changeTitle"></p>
-<label class="block text-xs font-semibold text-slate-700">Yeni Tarih Seçin:</label>
+<div class="space-y-2">
+<div>
+<label class="block text-[11px] font-semibold text-slate-700">Yeni Ofis Seçin:</label>
+<select id="newLocSelect" onchange="updateChangeDateOptions()" class="w-full px-2 py-1.5 border border-slate-300 rounded text-xs bg-white">
+<option value="Atatürk Havalimanı">Atatürk Havalimanı</option>
+<option value="Libadiye Teknoloji Ofisi">Libadiye Teknoloji Ofisi</option>
+</select>
+</div>
+<div>
+<label class="block text-[11px] font-semibold text-slate-700">Yeni Tarih Seçin:</label>
 <select id="newDateSelect" class="w-full px-2 py-1.5 border border-slate-300 rounded text-xs bg-white"></select>
+</div>
+</div>
 <div class="flex space-x-2 pt-1">
 <button onclick="confirmDateChange()" class="flex-1 bg-red-600 hover:bg-red-700 text-white text-xs font-medium py-1.5 rounded transition">Değişikliği Onayla</button>
 <button onclick="cancelDateChangeMode()" class="bg-slate-300 hover:bg-slate-400 text-slate-800 text-xs py-1.5 px-3 rounded transition">İptal</button>
@@ -587,17 +591,17 @@ async def index():
 <div class="bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs text-slate-600 space-y-1">
 <p class="font-bold text-slate-700"><i class="fa-solid fa-circle-info text-blue-500"></i> Kurallar:</p>
 <p>• Her çalışma haftasından <b>en fazla 2 gün</b> seçebilirsiniz.</p>
-<p>• Kontenjan: Atatürk (20) / Libadiye (30)</p>
+<p>• İki ofisin kontenjanını da aynı anda görüntüleyip dilediğinizi seçebilirsiniz.</p>
 </div>
 </section>
-<!-- Sağ Panel: Eylül 2026 Haftalık Takvim -->
+<!-- Sağ Panel: Eylül 2026 Her İki Ofis Açık Takvim -->
 <section class="lg:col-span-2 space-y-4">
 <div class="bg-white rounded-xl shadow-md p-6 border border-slate-200">
 <h3 class="text-base font-semibold text-slate-900 border-b pb-3 mb-4 flex justify-between items-center">
-<span><i class="fa-regular fa-calendar-days text-red-600 mr-2"></i> Eylül 2026 Gün Seçimi</span>
+<span><i class="fa-regular fa-calendar-days text-red-600 mr-2"></i> Eylül 2026 Ofis ve Gün Seçimi</span>
 <span id="selectedCountBadge" class="text-xs bg-red-50 text-red-700 px-2.5 py-1 rounded-full font-bold border border-red-200">0 Gün Seçildi</span>
 </h3>
-<!-- Haftalık Kartlar -->
+<!-- Haftalık Kartlar (İki Ofis Yan Yana / Alt Alta Açık) -->
 <div id="weeksContainer" class="space-y-4">
 <!-- JS Dynamic Weeks -->
 </div>
@@ -671,7 +675,8 @@ async def index():
 </div>
 <script>
          let currentAdminPass = "";
-         let selectedDates = new Set();
+         let selectedSelections = new Set(); // İçerik: "Atatürk Havalimanı|2026-09-01"
+         let globalAvailability = {};
          let activeLookupData = [];
          let selectedOldIdForChange = null;
          const weeksData = {
@@ -718,96 +723,126 @@ async def index():
                  });
              }
          }
-         async function loadMonthAvailability() {
-             const loc = document.getElementById("location").value;
+         async function loadAllAvailability() {
              try {
-                 const res = await fetch(`/api/month-availability?location=${encodeURIComponent(loc)}`);
-                 const availability = await res.json();
-                 renderWeeks(availability);
+                 const res = await fetch("/api/all-availability");
+                 globalAvailability = await res.json();
+                 renderWeeks();
              } catch (e) {
-                 console.error("Kontenjan yüklenemedi", e);
+                 console.error("Kontenjanlar yüklenemedi", e);
              }
          }
-         function renderWeeks(availability) {
+         function renderWeeks() {
              const container = document.getElementById("weeksContainer");
              container.innerHTML = "";
              const dayNames = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma"];
              for (const [weekTitle, dates] of Object.entries(weeksData)) {
                  const weekBox = document.createElement("div");
-                 weekBox.className = "border border-slate-200 rounded-xl p-4 bg-slate-50/50";
+                 weekBox.className = "border border-slate-200 rounded-xl p-4 bg-slate-50/50 space-y-3";
                  let daysHtml = "";
                  dates.forEach((dStr, idx) => {
                      const dateObj = new Date(dStr);
                      const formattedDate = `${dateObj.getDate()} Eylül (${dayNames[idx] || 'İş Günü'})`;
-                     const info = availability[dStr] || { remaining: 0, capacity: 20 };
-                     const isFull = info.remaining <= 0;
-                     const isChecked = selectedDates.has(dStr);
+                     // Atatürk Havalimanı Durumu
+                     const atkInfo = globalAvailability["Atatürk Havalimanı"]?.[dStr] || { remaining: 20 };
+                     const atkKey = `Atatürk Havalimanı|${dStr}`;
+                     const atkFull = atkInfo.remaining <= 0;
+                     const atkChecked = selectedSelections.has(atkKey);
+                     // Libadiye Durumu
+                     const libInfo = globalAvailability["Libadiye Teknoloji Ofisi"]?.[dStr] || { remaining: 30 };
+                     const libKey = `Libadiye Teknoloji Ofisi|${dStr}`;
+                     const libFull = libInfo.remaining <= 0;
+                     const libChecked = selectedSelections.has(libKey);
                      daysHtml += `
-<label class="flex items-center justify-between p-2.5 rounded-lg border transition ${
-                         isFull ? 'bg-slate-100 border-slate-200 opacity-60 cursor-not-allowed' :
-                         isChecked ? 'bg-red-50 border-red-400 font-semibold' : 'bg-white border-slate-200 hover:border-slate-300 cursor-pointer'
-                     }">
-<div class="flex items-center space-x-3">
-<input type="checkbox" value="${dStr}" data-week="${weekTitle}" ${isChecked ? 'checked' : ''} ${isFull ? 'disabled' : ''}
-                                    onchange="toggleDateSelection(this)" class="rounded text-red-600 focus:ring-red-500 h-4 w-4">
-<span class="text-xs text-slate-800">${formattedDate}</span>
+<div class="bg-white p-3 rounded-lg border border-slate-200 space-y-2">
+<div class="text-xs font-bold text-slate-800 border-b pb-1.5 flex items-center justify-between">
+<span><i class="fa-regular fa-calendar text-red-500 mr-1"></i> ${formattedDate}</span>
 </div>
-<span class="text-[11px] font-bold px-2 py-0.5 rounded ${
-                                 isFull ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-800'
-                             }">
-                                 ${isFull ? 'Doldu' : info.remaining + ' Boş Kontenjan'}
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+<!-- Atatürk Checkbox -->
+<label class="flex items-center justify-between p-2 rounded border transition ${
+                         atkFull ? 'bg-slate-100 border-slate-200 opacity-60 cursor-not-allowed' :
+                         atkChecked ? 'bg-red-50 border-red-400 font-semibold' : 'bg-slate-50/70 border-slate-200 hover:border-slate-300 cursor-pointer'
+                     }">
+<div class="flex items-center space-x-2">
+<input type="checkbox" value="${atkKey}" data-week="${weekTitle}" ${atkChecked ? 'checked' : ''} ${atkFull ? 'disabled' : ''}
+                                    onchange="toggleSelection(this)" class="rounded text-red-600 focus:ring-red-500 h-3.5 w-3.5">
+<span class="text-[11px] text-slate-800 font-medium">Atatürk Havalimanı</span>
+</div>
+<span class="text-[10px] font-bold px-1.5 py-0.5 rounded ${atkFull ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-800'}">
+                                 ${atkFull ? 'Doldu' : atkInfo.remaining + ' Boş'}
 </span>
 </label>
+<!-- Libadiye Checkbox -->
+<label class="flex items-center justify-between p-2 rounded border transition ${
+                         libFull ? 'bg-slate-100 border-slate-200 opacity-60 cursor-not-allowed' :
+                         libChecked ? 'bg-red-50 border-red-400 font-semibold' : 'bg-slate-50/70 border-slate-200 hover:border-slate-300 cursor-pointer'
+                     }">
+<div class="flex items-center space-x-2">
+<input type="checkbox" value="${libKey}" data-week="${weekTitle}" ${libChecked ? 'checked' : ''} ${libFull ? 'disabled' : ''}
+                                    onchange="toggleSelection(this)" class="rounded text-red-600 focus:ring-red-500 h-3.5 w-3.5">
+<span class="text-[11px] text-slate-800 font-medium">Libadiye Ofisi</span>
+</div>
+<span class="text-[10px] font-bold px-1.5 py-0.5 rounded ${libFull ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-800'}">
+                                 ${libFull ? 'Doldu' : libInfo.remaining + ' Boş'}
+</span>
+</label>
+</div>
+</div>
                      `;
                  });
                  weekBox.innerHTML = `
-<div class="flex justify-between items-center mb-3 border-b pb-2">
+<div class="flex justify-between items-center border-b pb-2">
 <h4 class="text-xs font-bold text-slate-800 uppercase flex items-center">
 <i class="fa-regular fa-calendar-check text-red-600 mr-2"></i> ${weekTitle}
 </h4>
-<span class="text-[11px] text-slate-500 font-medium">Max 2 Gün Seçilebilir</span>
+<span class="text-[11px] text-slate-500 font-medium">Haftalık Toplam Max 2 Gün</span>
 </div>
-<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+<div class="space-y-2">
                          ${daysHtml}
 </div>
                  `;
                  container.appendChild(weekBox);
              }
          }
-         function toggleDateSelection(checkbox) {
-             const dateVal = checkbox.value;
+         function toggleSelection(checkbox) {
+             const val = checkbox.value; // "Lokasyon|Tarih"
              const weekTitle = checkbox.getAttribute("data-week");
              if (checkbox.checked) {
-                 const selectedInWeek = Array.from(document.querySelectorAll(`input[data-week="${weekTitle}"]:checked`));
-                 if (selectedInWeek.length > 2) {
-                     alert(`${weekTitle} içerisinden en fazla 2 gün seçebilirsiniz!`);
+                 // Aynı hafta içinde toplam kaç gün seçilmiş sayalım
+                 const checkboxesInWeek = document.querySelectorAll(`input[data-week="${weekTitle}"]:checked`);
+                 if (checkboxesInWeek.length > 2) {
+                     alert(`${weekTitle} içerisinden toplamda en fazla 2 gün seçebilirsiniz!`);
                      checkbox.checked = false;
                      return;
                  }
-                 selectedDates.add(dateVal);
+                 selectedSelections.add(val);
              } else {
-                 selectedDates.delete(dateVal);
+                 selectedSelections.delete(val);
              }
-             document.getElementById("selectedCountBadge").innerText = `${selectedDates.size} Gün Seçildi`;
-             loadMonthAvailability();
+             document.getElementById("selectedCountBadge").innerText = `${selectedSelections.size} Gün Seçildi`;
+             loadAllAvailability();
          }
          async function handleReserve(event) {
              event.preventDefault();
              const alertBox = document.getElementById("alertBox");
              alertBox.className = "mt-4 hidden p-3 rounded-lg text-xs font-medium";
-             if (selectedDates.size === 0) {
-                 alertBox.innerText = "Lütfen takvimden en az bir gün seçiniz.";
+             if (selectedSelections.size === 0) {
+                 alertBox.innerText = "Lütfen takvimden en az bir ofis ve gün seçiniz.";
                  alertBox.classList.remove("hidden");
                  alertBox.classList.add("bg-rose-100", "text-rose-800", "border", "border-rose-300");
                  return;
              }
+             const selectionsArray = Array.from(selectedSelections).map(item => {
+                 const parts = item.split("|");
+                 return { location: parts[0], date: parts[1] };
+             });
              const formData = new FormData();
              formData.append("sicil", document.getElementById("sicil").value);
              formData.append("name", document.getElementById("name").value);
              formData.append("baskanlik", document.getElementById("baskanlik").value);
              formData.append("mudurluk", document.getElementById("mudurluk").value);
-             formData.append("location", document.getElementById("location").value);
-             formData.append("dates_json", JSON.stringify(Array.from(selectedDates)));
+             formData.append("selections_json", JSON.stringify(selectionsArray));
              try {
                  const response = await fetch("/api/reserve", {
                      method: "POST",
@@ -818,10 +853,10 @@ async def index():
                      alertBox.innerHTML = `${result.message}<br><br>🔑 <b>Atanan PNR Kodunuz:</b> <span class="bg-white px-2 py-1 rounded border font-mono text-red-600 font-bold select-all">${result.pnr}</span><br><span class='text-[11px] text-emerald-700 mt-1 block'>* Bu kodu ve sicilinizi kullanarak istediğiniz zaman rezervasyonunuzu yönetebilir/değiştirebilirsiniz.</span>`;
                      alertBox.classList.remove("hidden");
                      alertBox.classList.add("bg-emerald-100", "text-emerald-800", "border", "border-emerald-300");
-                     selectedDates.clear();
+                     selectedSelections.clear();
                      document.getElementById("selectedCountBadge").innerText = "0 Gün Seçildi";
                      document.getElementById("resForm").reset();
-                     loadMonthAvailability();
+                     loadAllAvailability();
                  } else {
                      alertBox.innerHTML = result.message || "Bir hata oluştu.";
                      alertBox.classList.remove("hidden");
@@ -862,8 +897,8 @@ async def index():
 <span class="font-bold text-slate-800">${item.res_date}</span>
 <span class="text-slate-500 block text-[10px]">${item.location}</span>
 </div>
-<button type="button" onclick="initChangeDate(${item.id}, '${item.res_date}', '${item.location}')" class="bg-amber-600 hover:bg-amber-700 text-white px-2.5 py-1 rounded transition text-[11px]">
-                                 Günü Değiştir
+<button type="button" onclick="initChange(${item.id}, '${item.res_date}', '${item.location}')" class="bg-amber-600 hover:bg-amber-700 text-white px-2.5 py-1 rounded transition text-[11px]">
+                                 Değiştir
 </button>
                          `;
                          listDiv.appendChild(row);
@@ -879,35 +914,34 @@ async def index():
                  alertBox.classList.add("bg-rose-100", "text-rose-800", "border", "border-rose-300");
              }
          }
-         async function initChangeDate(id, currentDate, locationName) {
+         function initChange(id, currentDate, currentLoc) {
              selectedOldIdForChange = id;
-             document.getElementById("changeTitle").innerText = `${currentDate} tarihini değiştirmek için yeni gün seçin:`;
-             const selectEl = document.getElementById("newDateSelect");
-             selectEl.innerHTML = '<option value="">Yükleniyor...</option>';
+             document.getElementById("changeTitle").innerText = `${currentLoc} - ${currentDate} için yeni ofis ve tarih seçin:`;
+             document.getElementById("newLocSelect").value = currentLoc;
              document.getElementById("changeDateContainer").classList.remove("hidden");
-             try {
-                 const res = await fetch(`/api/month-availability?location=${encodeURIComponent(locationName)}`);
-                 const availability = await res.json();
-                 selectEl.innerHTML = '<option value="">Yeni Tarih Seçiniz</option>';
-                 const otherDates = activeLookupData.filter(item => item.id !== id).map(item => item.res_date);
-                 for (const [dateStr, info] of Object.entries(availability)) {
-                     if (info.remaining <= 0 || otherDates.includes(dateStr)) continue;
-                     let weekKey = null;
-                     for (const [wTitle, wDays] of Object.entries(weeksData)) {
-                         if (wDays.includes(dateStr)) { weekKey = wTitle; break; }
-                     }
-                     if (weekKey) {
-                         const daysInThisWeek = weeksData[weekKey];
-                         const countInWeek = otherDates.filter(d => daysInThisWeek.includes(d)).length;
-                         if (countInWeek >= 2) continue;
-                     }
-                     const opt = document.createElement("option");
-                     opt.value = dateStr;
-                     opt.innerText = `${dateStr} (Boş Kontenjan: ${info.remaining})`;
-                     selectEl.appendChild(opt);
+             updateChangeDateOptions();
+         }
+         function updateChangeDateOptions() {
+             const selectedLoc = document.getElementById("newLocSelect").value;
+             const selectEl = document.getElementById("newDateSelect");
+             selectEl.innerHTML = '<option value="">Tarih Seçiniz</option>';
+             const locData = globalAvailability[selectedLoc] || {};
+             const otherDates = activeLookupData.filter(item => item.id !== selectedOldIdForChange).map(item => item.res_date);
+             for (const [dateStr, info] of Object.entries(locData)) {
+                 if (info.remaining <= 0 || otherDates.includes(dateStr)) continue;
+                 let weekKey = null;
+                 for (const [wTitle, wDays] of Object.entries(weeksData)) {
+                     if (wDays.includes(dateStr)) { weekKey = wTitle; break; }
                  }
-             } catch (e) {
-                 selectEl.innerHTML = '<option value="">Tarihler yüklenemedi</option>';
+                 if (weekKey) {
+                     const daysInThisWeek = weeksData[weekKey];
+                     const countInWeek = otherDates.filter(d => daysInThisWeek.includes(d)).length;
+                     if (countInWeek >= 2) continue;
+                 }
+                 const opt = document.createElement("option");
+                 opt.value = dateStr;
+                 opt.innerText = `${dateStr} (${selectedLoc} - Boş: ${info.remaining})`;
+                 selectEl.appendChild(opt);
              }
          }
          function cancelDateChangeMode() {
@@ -915,6 +949,7 @@ async def index():
              document.getElementById("changeDateContainer").classList.add("hidden");
          }
          async function confirmDateChange() {
+             const newLoc = document.getElementById("newLocSelect").value;
              const newDate = document.getElementById("newDateSelect").value;
              if (!newDate) {
                  alert("Lütfen geçerli yeni bir tarih seçiniz.");
@@ -922,6 +957,7 @@ async def index():
              }
              const formData = new FormData();
              formData.append("old_id", selectedOldIdForChange);
+             formData.append("new_location", newLoc);
              formData.append("new_date", newDate);
              formData.append("pnr", document.getElementById("cancel_pnr").value);
              formData.append("sicil", document.getElementById("cancel_sicil").value);
@@ -935,7 +971,7 @@ async def index():
                      alert(result.message);
                      cancelDateChangeMode();
                      document.getElementById("cancelForm").requestSubmit();
-                     loadMonthAvailability();
+                     loadAllAvailability();
                  } else {
                      alert(result.message || "Güncelleme sırasında bir hata oluştu.");
                  }
@@ -992,7 +1028,7 @@ async def index():
              formData.append("password", currentAdminPass);
              await fetch("/api/admin/delete-reservation", { method: "POST", body: formData });
              loadAdminReservations();
-             loadMonthAvailability();
+             loadAllAvailability();
          }
          async function setCustomCapacity() {
              const loc = document.getElementById("adminLoc").value;
@@ -1007,13 +1043,13 @@ async def index():
              const res = await fetch("/api/admin/set-capacity", { method: "POST", body: formData });
              if (res.ok) {
                  alert("Kontenjan başarıyla güncellendi.");
-                 loadMonthAvailability();
+                 loadAllAvailability();
              }
          }
          function downloadExcel() {
              window.location.href = `/api/admin/export-excel?password=${currentAdminPass}`;
          }
-         window.onload = loadMonthAvailability;
+         window.onload = loadAllAvailability;
 </script>
 </body>
 </html>
