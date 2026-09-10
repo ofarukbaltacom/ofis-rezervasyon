@@ -4,7 +4,6 @@ import io
 import json
 import os
 import random
-import re
 import string
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response
@@ -538,7 +537,6 @@ async def import_excel(password: str = Form(...), file: UploadFile = File(...)):
       if not row_full_text.strip():
         continue
 
-      # Güvenli string parçalama ile parantezli tarih ve ofisleri ayıkla
       extracted_items = []
       parts = row_full_text.split("(")
       for i in range(1, len(parts)):
