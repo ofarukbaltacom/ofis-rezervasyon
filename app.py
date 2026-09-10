@@ -9,8 +9,12 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 import sqlite3
 app = FastAPI(title="Uydu Ofis Rezervasyon Portalı")
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_FILE = os.path.join(BASE_DIR, "reservations.db")
+# Veritabanının sunucu yeniden başlatmalarında silinmemesi için kalıcı bir dizin kullanıyoruz
+# Sunucu ortamına göre kalıcı bir klasör (/tmp veya ana dizin)
+PERSISTENT_DIR = os.path.expanduser("~")
+if not os.path.exists(PERSISTENT_DIR):
+ PERSISTENT_DIR = "/tmp"
+DB_FILE = os.path.join(PERSISTENT_DIR, "uydu_ofis_reservations_v2.db")
 ADMIN_PASSWORD = "kogm2071"
 DEFAULT_CAPACITIES = {
    "Atatürk Havalimanı": 20,
