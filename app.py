@@ -9,11 +9,11 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 import sqlite3
 app = FastAPI(title="Uydu Ofis Rezervasyon Portalı")
-# Veritabanının yeniden başlatmalarda silinmemesi için kalıcı dizin ayarı
-PERSISTENT_DIR = os.path.expanduser("~")
-if not os.path.exists(PERSISTENT_DIR):
- PERSISTENT_DIR = "/tmp"
-DB_FILE = os.path.join(PERSISTENT_DIR, "uydu_ofis_reservations_v2.db")
+# Railway kalıcı disk (Volume) yolu (/data), yoksa yerel kullanıcı dizini
+PERSISTENT_DIR = (
+   "/data" if os.path.exists("/data") else os.path.expanduser("~")
+)
+DB_FILE = os.path.join(PERSISTENT_DIR, "reservations_production.db")
 ADMIN_PASSWORD = "kogm2071"
 DEFAULT_CAPACITIES = {
    "Atatürk Havalimanı": 20,
@@ -741,7 +741,6 @@ async def index():
                  const res = await fetch("/api/all-availability");
                  globalAvailability = await res.json();
                  renderWeeks();
-                 // Eğer açık bir değiştirme ekranı varsa güncel kontenjanları orada da yenile
                  if(!document.getElementById("changeDateContainer").classList.contains("hidden")) {
                      updateChangeDateOptions();
                  }
@@ -758,7 +757,6 @@ async def index():
                  let daysHtml = "";
                  dates.forEach((dStr, idx) => {
                      const dateObj = new Date(dStr);
-                     // Doğru gün adını bulmak için getDay() (Pazartesi=1, Salı=2...)
                      const dayIdx = (dateObj.getDay() + 6) % 7;
                      const formattedDate = `${dateObj.getDate()} Eylül (${dayNames[dayIdx] || 'İş Günü'})`;
                      const atkInfo = globalAvailability["Atatürk Havalimanı"]?.[dStr] || { remaining: 20 };
