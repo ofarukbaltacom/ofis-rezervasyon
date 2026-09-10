@@ -58,7 +58,7 @@ SEPTEMBER_2026_WEEKS = {
 def generate_pnr(sicil: str):
   chars = string.ascii_uppercase + string.digits
   random_suffix = "".join(random.choices(chars, k=4))
-  return f"TK-{sicil.strip().upper()}-{random_suffix}"
+  return f"TK-{str(sicil).strip().upper()}-{random_suffix}"
 
 
 def init_db():
@@ -530,84 +530,87 @@ async def import_excel(password: str = Form(...), file: UploadFile = File(...)):
     imported_count = 0
 
     for row in sheet.iter_rows(min_row=2, values_only=True):
-      if not row or all(cell is None for cell in row):
-        continue
+      try:
+        if not row or all(cell is None for cell in row):
+          continue
 
-      row_full_text = " ".join([str(c) for c in row if c is not None])
-      if not row_full_text.strip():
-        continue
+        row_full_text = " ".join([str(c) for c in row if c is not None])
+        if not row_full_text.strip():
+          continue
 
-      extracted_items = []
-      parts = row_full_text.split("(")
-      for i in range(1, len(parts)):
-        sub_part = parts[i]
-        if ")" in sub_part:
-          loc_raw = sub_part.split(")")[0].strip()
-          prev_text = parts[i - 1].strip()
-          words = prev_text.split()
-          if words:
-            date_candidate = words[-1]
-            if "." in date_candidate and len(date_candidate) >= 8:
-              extracted_items.append((date_candidate, loc_raw))
+        extracted_items = []
+        parts = row_full_text.split("(")
+        for i in range(1, len(parts)):
+          sub_part = parts[i]
+          if ")" in sub_part:
+            loc_raw = sub_part.split(")")[0].strip()
+            prev_text = parts[i - 1].strip()
+            words = prev_text.split()
+            if words:
+              date_candidate = words[-1]
+              if "." in date_candidate and len(date_candidate) >= 8:
+                extracted_items.append((date_candidate, loc_raw))
 
-      if not extracted_items:
-        continue
+        if not extracted_items:
+          continue
 
-      sicil = f"99{random.randint(1000,9999)}"
-      name = "Personel"
-      baskanlik = "Kargo Operasyon Başkanlığı"
-      mudurluk = "KARGO OPERASYONEL PERFORMANS MD."
+        sicil = f"99{random.randint(1000,9999)}"
+        name = "Personel"
+        baskanlik = "Kargo Operasyon Başkanlığı"
+        mudurluk = "KARGO OPERASYONEL PERFORMANS MD."
 
-      for cell in row:
-        if cell is not None:
-          val_str = str(cell).strip()
-          if val_str.isdigit() and 4 <= len(val_str) <= 8:
-            sicil = val_str
-          elif (
-              len(val_str) > 3
-              and "@" not in val_str
-              and "(" not in val_str
-              and "Hafta" not in val_str
+        for cell in row:
+          if cell is not None:
+            val_str = str(cell).strip()
+            if val_str.isdigit() and 4 <= len(val_str) <= 8:
+              sicil = val_str
+            elif (
+                len(val_str) > 3
+                and "@" not in val_str
+                and "(" not in val_str
+                and "Hafta" not in val_str
+            ):
+              if not any(char.isdigit() for char in val_str):
+                name = val_str
+
+        pnr = generate_pnr(sicil)
+
+        for date_str, loc_raw in extracted_items:
+          try:
+            dt_obj = datetime.strptime(date_str[:10], "%d.%m.%Y")
+            res_date = dt_obj.strftime("%Y-%m-%d")
+          except:
+            continue
+
+          if not res_date.startswith("2026-09-"):
+            continue
+
+          loc_lower = loc_raw.lower()
+          if (
+              "libadiye" in loc_lower
+              or "tekno" in loc_lower
+              or "ofis" in loc_lower
+              or "liba" in loc_lower
           ):
-            if not any(char.isdigit() for char in val_str):
-              name = val_str
+            location = "Libadiye Teknoloji Ofisi"
+          else:
+            location = "Atatürk Havalimanı"
 
-      pnr = generate_pnr(sicil)
+          cursor.execute(
+              "SELECT id FROM reservations WHERE sicil = ? AND res_date = ?",
+              (sicil, res_date),
+          )
+          if cursor.fetchone():
+            continue
 
-      for date_str, loc_raw in extracted_items:
-        try:
-          dt_obj = datetime.strptime(date_str[:10], "%d.%m.%Y")
-          res_date = dt_obj.strftime("%Y-%m-%d")
-        except:
-          continue
-
-        if not res_date.startswith("2026-09-"):
-          continue
-
-        loc_lower = loc_raw.lower()
-        if (
-            "libadiye" in loc_lower
-            or "tekno" in loc_lower
-            or "ofis" in loc_lower
-            or "liba" in loc_lower
-        ):
-          location = "Libadiye Teknoloji Ofisi"
-        else:
-          location = "Atatürk Havalimanı"
-
-        cursor.execute(
-            "SELECT id FROM reservations WHERE sicil = ? AND res_date = ?",
-            (sicil, res_date),
-        )
-        if cursor.fetchone():
-          continue
-
-        cursor.execute(
-            "INSERT INTO reservations (pnr, sicil, name, baskanlik, mudurluk,"
-            " location, res_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (pnr, sicil, name, baskanlik, mudurluk, location, res_date),
-        )
-        imported_count += 1
+          cursor.execute(
+              "INSERT INTO reservations (pnr, sicil, name, baskanlik, mudurluk,"
+              " location, res_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
+              (pnr, sicil, name, baskanlik, mudurluk, location, res_date),
+          )
+          imported_count += 1
+      except Exception:
+        continue
 
     conn.commit()
     conn.close()
