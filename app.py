@@ -9,6 +9,7 @@ from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 import openpyxl
 import sqlite3
+import uvicorn
 
 app = FastAPI(title="Uydu Ofis Rezervasyon Portalı")
 
@@ -1362,3 +1363,10 @@ async def index():
 </script>
 </body>
 </html>
+"""
+
+
+# Railway ve bulut sunucuların dinamik PORT gereksinimine tam uyumlu başlatıcı:
+if __name__ == "__main__":
+  port = int(os.environ.get("PORT", 8000))
+  uvicorn.run("main:app", host="0.0.0.0", port=port)
