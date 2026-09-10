@@ -7,6 +7,7 @@ import random
 import string
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response
+import openpyxl
 import sqlite3
 app = FastAPI(title="Uydu Ofis Rezervasyon Portalı")
 # Railway kalıcı disk (Volume) yolu (/data), yoksa yerel kullanıcı dizini
@@ -471,45 +472,48 @@ async def import_excel(password: str = Form(...), file: UploadFile = File(...)):
        status_code=401, content={"message": "Yetkisiz erişim!"}
    )
  try:
-   content = await file.read()
-   decoded = content.decode("utf-8-sig")
-   csv_reader = csv.reader(io.StringIO(decoded), delimiter=";")
-   header = next(csv_reader, None)  # Başlığı geç
+   contents = await file.read()
+   wb = openpyxl.load_workbook(filename=io.BytesIO(contents))
+   sheet = wb.active
    conn = get_db()
    cursor = conn.cursor()
    imported_count = 0
-   for row in csv_reader:
-     if len(row) < 7:
+   # İlk satırı başlık kabul edip 2. satırdan okumaya başlayalım
+   for row in sheet.iter_rows(min_row=2, values_only=True):
+     if not row or all(cell is None for cell in row):
        continue
-     # [ID, PNR, Sicil, AdSoyad, Baskanlik, Mudurluk, Lokasyon, Tarih, ...]
-     # Dışarıdan export edilen formatta ID başta olabilir, kontrol edelim:
-     if row[0].isdigit() and len(row) >= 8:
-       pnr = row[1].strip()
-       sicil = row[2].strip()
-       name = row[3].strip()
-       baskanlik = row[4].strip()
-       mudurluk = row[5].strip()
-       location = row[6].strip()
-       res_date = row[7].strip()
+     # Hücreleri stringe çevirerek güvenle alalım
+     row_vals = [str(cell).strip() if cell is not None else "" for cell in row]
+     if len(row_vals) < 7:
+       continue
+     # Sütun yapısı kontrolü (ID varsa 8 sütun, yoksa 7 sütun olabilir)
+     if row_vals[0].isdigit() and len(row_vals) >= 8:
+       pnr = row_vals[1]
+       sicil = row_vals[2]
+       name = row_vals[3]
+       baskanlik = row_vals[4]
+       mudurluk = row_vals[5]
+       location = row_vals[6]
+       res_date = row_vals[7]
      else:
-       pnr = row[0].strip()
-       sicil = row[1].strip()
-       name = row[2].strip()
-       baskanlik = row[3].strip()
-       mudurluk = row[4].strip()
-       location = row[5].strip()
-       res_date = row[6].strip()
-     if not pnr or pnr.startswith("ID"):
+       pnr = row_vals[0]
+       sicil = row_vals[1]
+       name = row_vals[2]
+       baskanlik = row_vals[3]
+       mudurluk = row_vals[4]
+       location = row_vals[5]
+       res_date = row_vals[6]
+     if not sicil or not res_date:
        continue
-     if not pnr.startswith("TK-"):
+     if not pnr or not pnr.startswith("TK-"):
        pnr = generate_pnr(sicil)
-     # Mükerrer kayıt kontrolü (Aynı sicil aynı gün başka kayıt var mı)
+     # Mükerrer kayıt kontrolü (Aynı sicil aynı gün kayıtlı mı)
      cursor.execute(
          "SELECT id FROM reservations WHERE sicil = ? AND res_date = ?",
          (sicil, res_date),
      )
      if cursor.fetchone():
-       continue  # Zaten varsa atla
+       continue
      cursor.execute(
          "INSERT INTO reservations (pnr, sicil, name, baskanlik, mudurluk,"
          " location, res_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -521,15 +525,20 @@ async def import_excel(password: str = Form(...), file: UploadFile = File(...)):
    return JSONResponse(
        content={
            "message": (
-               f"Başarıyla {imported_count} adet rezervasyon sisteme"
-               " aktarıldı ve kontenjanlar güncellendi!"
+               f"Başarıyla {imported_count} adet rezervasyon Excel dosyasından"
+               " içe aktarıldı ve kontenjanlar güncellendi!"
            )
        }
    )
  except Exception as e:
    return JSONResponse(
        status_code=400,
-       content={"message": f"Dosya işlenirken hata oluştu: {str(e)}"},
+       content={
+           "message": (
+               "Excel dosyası okunurken hata oluştu. Lütfen geçerli bir .xlsx"
+               f" yüklediğinizden emin olun. Detay: {str(e)}"
+           )
+       },
    )
 
 # ----------------- MAIN UI HTML -----------------
@@ -709,13 +718,13 @@ async def index():
 <div id="adminContent" class="hidden space-y-6">
 <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
 <h4 class="text-xs font-bold text-slate-700 uppercase flex items-center">
-<i class="fa-solid fa-file-excel text-emerald-600 mr-2"></i> Eski Rezervasyonları İçe Aktar (Excel / CSV)
+<i class="fa-solid fa-file-excel text-emerald-600 mr-2"></i> Eski Rezervasyonları İçe Aktar (Excel - .xlsx)
 </h4>
 <div class="flex items-center space-x-3">
-<input type="file" id="importFile" accept=".csv" class="text-xs border rounded p-1 bg-white flex-1">
-<button onclick="importExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-1.5 px-4 rounded-lg font-medium transition">İçe Aktar</button>
+<input type="file" id="importFile" accept=".xlsx" class="text-xs border rounded p-1 bg-white flex-1">
+<button onclick="importExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-1.5 px-4 rounded-lg font-medium transition">Excel İçe Aktar</button>
 </div>
-<p class="text-[11px] text-slate-500">* Daha önce indirdiğiniz CSV formatındaki verileri yükleyerek kontenjanları anında güncelleyebilirsiniz.</p>
+<p class="text-[11px] text-slate-500">* Daha önce indirdiğiniz Excel (.xlsx) formatındaki listeyi yükleyerek tüm kontenjanları ve geçmiş rezervasyonları anında senkronize edebilirsiniz.</p>
 </div>
 <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
 <h4 class="text-xs font-bold text-slate-700 uppercase mb-3 flex items-center">
@@ -1157,7 +1166,7 @@ async def index():
          async function importExcel() {
              const fileInput = document.getElementById("importFile");
              if (fileInput.files.length === 0) {
-                 alert("Lütfen yüklenecek bir CSV dosyası seçin.");
+                 alert("Lütfen yüklenecek bir Excel (.xlsx) dosyası seçin.");
                  return;
              }
              const formData = new FormData();
