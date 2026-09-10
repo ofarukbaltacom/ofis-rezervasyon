@@ -36,6 +36,7 @@
 </button>
 </div>
 
+<!-- Rezervasyon Yap Sekmesi -->
 <div id="tabCreateContent">
 <form id="resForm" onsubmit="handleReserve(event)" class="space-y-4">
 <div>
@@ -99,17 +100,22 @@
 <option value="SABİHA GÖKÇEN KARGO MD.">SABİHA GÖKÇEN KARGO MD.</option>
 </select>
 </div>
-<div class="flex items-start space-x-2 pt-2">
+
+<!-- Kuralları Kabul Et Onay Kutusu ve Rezerve Et Butonu En Altta -->
+<div class="pt-2 space-y-3 border-t mt-4">
+<div class="flex items-start space-x-2">
 <input type="checkbox" id="rulesCheck" required class="mt-0.5 rounded text-red-600 focus:ring-red-500">
 <label for="rulesCheck" class="text-xs text-slate-600 leading-tight">Haftalık toplamda en fazla 2 gün seçim kuralını ve çalışma esaslarını onaylıyorum.</label>
 </div>
 <button type="submit" id="submitBtn" class="w-full bg-red-600 hover:bg-red-700 text-white font-medium py-2.5 px-4 rounded-lg transition duration-150 flex items-center justify-center space-x-2 text-sm shadow cursor-pointer">
 <i class="fa-solid fa-check"></i> <span>Seçilen Günleri Rezerve Et</span>
 </button>
+</div>
 </form>
 <div id="alertBox" class="mt-4 hidden p-3 rounded-lg text-xs font-medium"></div>
 </div>
 
+<!-- Gün Değiştir / İptal Et Sekmesi -->
 <div id="tabCancelContent" class="hidden space-y-4">
 <form id="cancelForm" onsubmit="handleLookup(event)" class="space-y-3">
 <p class="text-xs text-slate-500">Rezervasyonunuzu değiştirmek veya iptal etmek için PNR kodunuzu ve sicilinizi girip sorgulayınız.</p>
@@ -148,13 +154,14 @@
 </div>
 </div>
 <div class="flex space-x-2 pt-1">
-<button onclick="confirmDateChange()" class="flex-1 bg-red-600 hover:bg-red-700 text-white text-xs font-medium py-1.5 rounded transition">Değişikliği Onayla</button>
-<button onclick="cancelDateChangeMode()" class="bg-slate-300 hover:bg-slate-400 text-slate-800 text-xs py-1.5 px-3 rounded transition">İptal</button>
+<button onclick="confirmDateChange()" class="flex-1 bg-red-600 hover:bg-red-700 text-white text-xs font-medium py-1.5 rounded transition cursor-pointer">Değişikliği Onayla</button>
+<button onclick="cancelDateChangeMode()" class="bg-slate-300 hover:bg-slate-400 text-slate-800 text-xs py-1.5 px-3 rounded transition cursor-pointer">İptal</button>
 </div>
 </div>
 </div>
 </div>
 
+<!-- Kurallar Bilgi Kutusu En Altta -->
 <div class="bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs text-slate-600 space-y-1 mt-6">
 <p class="font-bold text-slate-700"><i class="fa-solid fa-circle-info text-blue-500"></i> Kurallar:</p>
 <p>• Her çalışma haftasından <b>en fazla 2 gün</b> seçebilirsiniz.</p>
@@ -162,6 +169,7 @@
 </div>
 </section>
 
+<!-- Sağ Panel: Eylül 2026 Ofis ve Gün Seçimi -->
 <section class="lg:col-span-2 space-y-4">
 <div class="bg-white rounded-xl shadow-md p-6 border border-slate-200">
 <h3 class="text-base font-semibold text-slate-900 border-b pb-3 mb-4 flex justify-between items-center">
@@ -173,6 +181,7 @@
 </section>
 </main>
 
+<!-- Admin Paneli Modalı -->
 <div id="adminModal" class="fixed inset-0 bg-black/60 hidden backdrop-blur-sm flex items-center justify-center p-4 z-50">
 <div class="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-slate-300">
 <div class="bg-slate-900 text-white px-6 py-4 flex justify-between items-center border-b border-slate-700">
@@ -180,7 +189,7 @@
 <i class="fa-solid fa-user-shield text-red-500"></i>
 <h3 class="font-bold text-base">Yönetici Kontrol Paneli</h3>
 </div>
-<button onclick="toggleAdminModal()" class="text-slate-400 hover:text-white text-lg"><i class="fa-solid fa-xmark"></i></button>
+<button onclick="toggleAdminModal()" class="text-slate-400 hover:text-white text-lg cursor-pointer"><i class="fa-solid fa-xmark"></i></button>
 </div>
 <div class="p-6 overflow-y-auto space-y-6">
 <div id="adminLoginForm" class="max-w-sm mx-auto my-8 space-y-4 text-center">
@@ -462,8 +471,8 @@ async function handleLookup(event) {
                         <span class="text-slate-500 block text-[10px]">${item.location}</span>
                     </div>
                     <div class="flex space-x-1.5">
-                        <button type="button" onclick="initChange(${item.id}, '${item.res_date}', '${item.location}')" class="bg-amber-600 hover:bg-amber-700 text-white px-2 py-1 rounded transition text-[11px]">Değiştir</button>
-                        <button type="button" onclick="cancelSingle(${item.id})" class="bg-rose-600 hover:bg-rose-700 text-white px-2 py-1 rounded transition text-[11px]">İptal Et</button>
+                        <button type="button" onclick="initChange(${item.id}, '${item.res_date}', '${item.location}')" class="bg-amber-600 hover:bg-amber-700 text-white px-2 py-1 rounded transition text-[11px] cursor-pointer">Değiştir</button>
+                        <button type="button" onclick="cancelSingle(${item.id})" class="bg-rose-600 hover:bg-rose-700 text-white px-2 py-1 rounded transition text-[11px] cursor-pointer">İptal Et</button>
                     </div>`;
                 listDiv.appendChild(row);
             });
