@@ -235,7 +235,7 @@ async def make_reservation(
 
   msg = f"{len(valid_items)} adet gün için rezervasyonunuz başarıyla oluşturuldu."
   if errors:
-    msg += f"<br><small class='text-amber-700'>Uyarı: {', '.join(errors)}</small>"
+    msg += f"<br><small class='text-amber-700'>Uyari: {', '.join(errors)}</small>"
 
   return JSONResponse(content={"message": msg, "pnr": pnr_code})
 
@@ -535,84 +535,100 @@ async def import_excel(password: str = Form(...), file: UploadFile = File(...)):
         if not row or all(cell is None for cell in row):
           continue
 
-        cell_texts = [str(c) for c in row if c is not None]
-        full_row_text = " ".join(cell_texts)
-        if not full_row_text.strip():
+        row_list = [str(c).strip() for c in row if c is not None]
+        if len(row_list) < 5:
           continue
 
-        sicil = f"99{random.randint(1000,9999)}"
-        name = "Personel"
-        baskanlik = "Kargo Operasyon Başkanlığı"
-        mudurluk = "KARGO OPERASYONEL PERFORMANS MD."
+        # Sütun sırası: [0]: id (atlandı), [1]: sicil, [2]: ad_soyad, [3]: baskanlik, [4]: mudurluk, [5+]: haftalar
+        sicil = str(row[1]).strip() if row[1] is not None else ""
+        name = str(row[2]).strip() if row[2] is not None else "Personel"
+        baskanlik = (
+            str(row[3]).strip()
+            if row[3] is not None
+            else "Kargo Operasyon Başkanlığı"
+        )
+        mudurluk = (
+            str(row[4]).strip()
+            if row[4] is not None
+            else "KARGO OPERASYONEL PERFORMANS MD."
+        )
 
-        for c_str in cell_texts:
-          val_str = c_str.strip()
-          if val_str.isdigit() and 4 <= len(val_str) <= 8:
-            sicil = val_str
-          elif (
-              len(val_str) > 3
-              and "@" not in val_str
-              and "(" not in val_str
-              and "Hafta" not in val_str
-              and "|" not in val_str
-          ):
-            if not any(char.isdigit() for char in val_str):
-              name = val_str
+        if not sicil or sicil.lower() == "none":
+          continue
 
         pnr = generate_pnr(sicil)
 
-        segments = full_row_text.split("|")
-        for seg in segments:
-          seg = seg.strip()
-          if not seg or "(" not in seg or ")" not in seg:
+        # 5. indexten itibaren haftalık sütunları tarayalım
+        for col_idx in range(5, len(row)):
+          cell_val = row[col_idx]
+          if cell_val is None:
             continue
 
-          try:
-            loc_raw = seg.split("(")[1].split(")")[0].strip()
-            left_part = seg.split("(")[0].strip()
-            words = left_part.split()
-
-            date_candidate = ""
-            for w in words:
-              if "." in w and len(w) >= 8:
-                date_candidate = w
-                break
-
-            if not date_candidate:
-              continue
-
-            dt_obj = datetime.strptime(date_candidate[:10], "%d.%m.%Y")
-            res_date = dt_obj.strftime("%Y-%m-%d")
-
-            if not res_date.startswith("2026-09-"):
-              continue
-
-            loc_lower = loc_raw.lower()
-            if (
-                "libadiye" in loc_lower
-                or "tekno" in loc_lower
-                or "ofis" in loc_lower
-                or "liba" in loc_lower
-            ):
-              location = "Libadiye Teknoloji Ofisi"
-            else:
-              location = "Atatürk Havalimanı"
-
-            cursor.execute(
-                "SELECT id FROM reservations WHERE sicil = ? AND res_date = ?",
-                (sicil, res_date),
-            )
-            if cursor.fetchone():
-              continue
-
-            cursor.execute(
-                "INSERT INTO reservations (pnr, sicil, name, baskanlik,"
-                " mudurluk, location, res_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (pnr, sicil, name, baskanlik, mudurluk, location, res_date),
-            )
-            imported_count += 1
-          except Exception:
+          cell_str = str(cell_val).strip()
+          if not cell_str:
             continue
+
+          segments = cell_str.split("|")
+          for seg in segments:
+            seg = seg.strip()
+            if not seg or "(" not in seg or ")" not in seg:
+              continue
+
+            try:
+              loc_raw = seg.split("(")[1].split(")")[0].strip()
+              left_part = seg.split("(")[0].strip()
+              words = left_part.split()
+
+              date_candidate = ""
+              for w in words:
+                if "." in w and len(w) >= 8:
+                  date_candidate = w
+                  break
+
+              if not date_candidate:
+                continue
+
+              dt_obj = datetime.strptime(date_candidate[:10], "%d.%m.%Y")
+              res_date = dt_obj.strftime("%Y-%m-%d")
+
+              if not res_date.startswith("2026-09-"):
+                continue
+
+              loc_lower = loc_raw.lower()
+              if (
+                  "libadiye" in loc_lower
+                  or "tekno" in loc_lower
+                  or "ofis" in loc_lower
+                  or "liba" in loc_lower
+              ):
+                location = "Libadiye Teknoloji Ofisi"
+              else:
+                location = "Atatürk Havalimanı"
+
+              cursor.execute(
+                  "SELECT id FROM reservations WHERE sicil = ? AND res_date"
+                  " = ?",
+                  (sicil, res_date),
+              )
+              if cursor.fetchone():
+                continue
+
+              cursor.execute(
+                  "INSERT INTO reservations (pnr, sicil, name, baskanlik,"
+                  " mudurluk, location, res_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                  (
+                      pnr,
+                      sicil,
+                      name,
+                      baskanlik,
+                      mudurluk,
+                      location,
+                      res_date,
+                  ),
+              )
+              imported_count += 1
+            except Exception:
+              continue
 
       except Exception:
         continue
@@ -629,7 +645,7 @@ async def import_excel(password: str = Form(...), file: UploadFile = File(...)):
     )
   except Exception as e:
     return JSONResponse(
-        status_count=400,
+        status_code=400,
         content={
             "message": f"Excel dosyası işlenirken hata oluştu: {str(e)[:120]}"
         },
