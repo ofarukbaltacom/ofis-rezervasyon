@@ -93,12 +93,10 @@ def get_db():
 async def get_all_availability():
  conn = get_db()
  cursor = conn.cursor()
- # Özel kapasiteler
  cursor.execute("SELECT location, res_date, capacity FROM custom_capacities")
  custom_caps = {}
  for loc, d, cap in cursor.fetchall():
    custom_caps[(loc, d)] = cap
- # Doluluklar
  cursor.execute("SELECT location, res_date, COUNT(*) FROM reservations GROUP BY location, res_date")
  booked_counts = {}
  for loc, d, cnt in cursor.fetchall():
@@ -129,7 +127,7 @@ async def make_reservation(
    selections_json: str = Form(...),
 ):
  try:
-   selections = json.loads(selections_json)  # [{'location': '...', 'date': '...'}, ...]
+   selections = json.loads(selections_json)
  except:
    return JSONResponse(
        status_code=400, content={"message": "Geçersiz seçim formatı!"}
@@ -234,6 +232,17 @@ async def lookup_reservation(pnr: str = Form(...), sicil: str = Form(...)):
      {"id": r[0], "location": r[1], "res_date": r[2]} for r in rows
  ]
  return JSONResponse(content=reservations)
+
+@app.post("/api/cancel-single-reservation")
+async def cancel_single_reservation(id: int = Form(...)):
+ conn = get_db()
+ cursor = conn.cursor()
+ cursor.execute("DELETE FROM reservations WHERE id = ?", (id,))
+ conn.commit()
+ conn.close()
+ return JSONResponse(
+     content={"message": "Seçilen gün rezervasyonu başarıyla iptal edildi."}
+ )
 
 @app.post("/api/change-reservation-day")
 async def change_reservation_day(
@@ -491,7 +500,7 @@ async def index():
 <i class="fa-regular fa-calendar-check"></i> <span>Rezervasyon Yap</span>
 </button>
 <button onclick="switchTab('cancel')" id="tabCancelBtn" class="pb-2 px-3 text-slate-500 hover:text-slate-800 flex items-center space-x-1.5 transition">
-<i class="fa-solid fa-right-left"></i> <span>Gün Değiştir / Yönet</span>
+<i class="fa-solid fa-right-left"></i> <span>Gün Değiştir / İptal Et</span>
 </button>
 </div>
 <!-- Rezervasyon Formu -->
@@ -540,10 +549,10 @@ async def index():
 </form>
 <div id="alertBox" class="mt-4 hidden p-3 rounded-lg text-xs font-medium"></div>
 </div>
-<!-- Gün Değiştirme / Yönetim Formu -->
+<!-- Gün Değiştirme / İptal Formu -->
 <div id="tabCancelContent" class="hidden space-y-4">
 <form id="cancelForm" onsubmit="handleLookup(event)" class="space-y-3">
-<p class="text-xs text-slate-500">Rezervasyon gününüzü veya ofisinizi değiştirmek için PNR kodunuzu ve sicilinizi girip sorgulayınız.</p>
+<p class="text-xs text-slate-500">Rezervasyonunuzu değiştirmek veya iptal etmek için PNR kodunuzu ve sicilinizi girip sorgulayınız.</p>
 <div>
 <label class="block text-xs font-bold text-slate-600 uppercase mb-1">PNR Kodu</label>
 <input type="text" id="cancel_pnr" required placeholder="Örn: TK-123456-ABCD"
@@ -561,12 +570,12 @@ async def index():
 </button>
 </form>
 <div id="cancelAlertBox" class="mt-2 hidden p-3 rounded-lg text-xs font-medium"></div>
-<!-- Sorgulanan Günler Listesi ve Değiştirme Paneli -->
+<!-- Sorgulanan Günler Listesi ve Yönetim Butonları -->
 <div id="lookupResultContainer" class="hidden space-y-2 pt-2 border-t">
 <h4 class="text-xs font-bold text-slate-700 uppercase">Mevcut Rezervasyon Günleriniz:</h4>
 <div id="reservationDaysList" class="space-y-2 max-h-48 overflow-y-auto"></div>
 </div>
-<!-- Yeni Ofis ve Tarih Seçim Alanı (Gün/Ofis Değiştirme Modu İçin) -->
+<!-- Yeni Ofis ve Tarih Seçim Alanı (Gün Değiştirme Modu İçin) -->
 <div id="changeDateContainer" class="hidden space-y-2 pt-3 border-t bg-amber-50/60 p-3 rounded-lg border border-amber-200">
 <p class="text-xs font-bold text-amber-900" id="changeTitle"></p>
 <div class="space-y-2">
@@ -591,7 +600,7 @@ async def index():
 <div class="bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs text-slate-600 space-y-1">
 <p class="font-bold text-slate-700"><i class="fa-solid fa-circle-info text-blue-500"></i> Kurallar:</p>
 <p>• Her çalışma haftasından <b>en fazla 2 gün</b> seçebilirsiniz.</p>
-<p>• İki ofisin kontenjanını da aynı anda görüntüleyip dilediğinizi seçebilirsiniz.</p>
+<p>• Dilediğiniz günü değiştirebilir veya tamamen iptal edebilirsiniz.</p>
 </div>
 </section>
 <!-- Sağ Panel: Eylül 2026 Her İki Ofis Açık Takvim -->
@@ -601,7 +610,7 @@ async def index():
 <span><i class="fa-regular fa-calendar-days text-red-600 mr-2"></i> Eylül 2026 Ofis ve Gün Seçimi</span>
 <span id="selectedCountBadge" class="text-xs bg-red-50 text-red-700 px-2.5 py-1 rounded-full font-bold border border-red-200">0 Gün Seçildi</span>
 </h3>
-<!-- Haftalık Kartlar (İki Ofis Yan Yana / Alt Alta Açık) -->
+<!-- Haftalık Kartlar -->
 <div id="weeksContainer" class="space-y-4">
 <!-- JS Dynamic Weeks -->
 </div>
@@ -675,7 +684,7 @@ async def index():
 </div>
 <script>
          let currentAdminPass = "";
-         let selectedSelections = new Set(); // İçerik: "Atatürk Havalimanı|2026-09-01"
+         let selectedSelections = new Set();
          let globalAvailability = {};
          let activeLookupData = [];
          let selectedOldIdForChange = null;
@@ -743,12 +752,10 @@ async def index():
                  dates.forEach((dStr, idx) => {
                      const dateObj = new Date(dStr);
                      const formattedDate = `${dateObj.getDate()} Eylül (${dayNames[idx] || 'İş Günü'})`;
-                     // Atatürk Havalimanı Durumu
                      const atkInfo = globalAvailability["Atatürk Havalimanı"]?.[dStr] || { remaining: 20 };
                      const atkKey = `Atatürk Havalimanı|${dStr}`;
                      const atkFull = atkInfo.remaining <= 0;
                      const atkChecked = selectedSelections.has(atkKey);
-                     // Libadiye Durumu
                      const libInfo = globalAvailability["Libadiye Teknoloji Ofisi"]?.[dStr] || { remaining: 30 };
                      const libKey = `Libadiye Teknoloji Ofisi|${dStr}`;
                      const libFull = libInfo.remaining <= 0;
@@ -759,7 +766,6 @@ async def index():
 <span><i class="fa-regular fa-calendar text-red-500 mr-1"></i> ${formattedDate}</span>
 </div>
 <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-<!-- Atatürk Checkbox -->
 <label class="flex items-center justify-between p-2 rounded border transition ${
                          atkFull ? 'bg-slate-100 border-slate-200 opacity-60 cursor-not-allowed' :
                          atkChecked ? 'bg-red-50 border-red-400 font-semibold' : 'bg-slate-50/70 border-slate-200 hover:border-slate-300 cursor-pointer'
@@ -773,7 +779,6 @@ async def index():
                                  ${atkFull ? 'Doldu' : atkInfo.remaining + ' Boş'}
 </span>
 </label>
-<!-- Libadiye Checkbox -->
 <label class="flex items-center justify-between p-2 rounded border transition ${
                          libFull ? 'bg-slate-100 border-slate-200 opacity-60 cursor-not-allowed' :
                          libChecked ? 'bg-red-50 border-red-400 font-semibold' : 'bg-slate-50/70 border-slate-200 hover:border-slate-300 cursor-pointer'
@@ -806,10 +811,9 @@ async def index():
              }
          }
          function toggleSelection(checkbox) {
-             const val = checkbox.value; // "Lokasyon|Tarih"
+             const val = checkbox.value;
              const weekTitle = checkbox.getAttribute("data-week");
              if (checkbox.checked) {
-                 // Aynı hafta içinde toplam kaç gün seçilmiş sayalım
                  const checkboxesInWeek = document.querySelectorAll(`input[data-week="${weekTitle}"]:checked`);
                  if (checkboxesInWeek.length > 2) {
                      alert(`${weekTitle} içerisinden toplamda en fazla 2 gün seçebilirsiniz!`);
@@ -897,9 +901,14 @@ async def index():
 <span class="font-bold text-slate-800">${item.res_date}</span>
 <span class="text-slate-500 block text-[10px]">${item.location}</span>
 </div>
-<button type="button" onclick="initChange(${item.id}, '${item.res_date}', '${item.location}')" class="bg-amber-600 hover:bg-amber-700 text-white px-2.5 py-1 rounded transition text-[11px]">
-                                 Değiştir
+<div class="flex space-x-1.5">
+<button type="button" onclick="initChange(${item.id}, '${item.res_date}', '${item.location}')" class="bg-amber-600 hover:bg-amber-700 text-white px-2 py-1 rounded transition text-[11px]">
+                                     Değiştir
 </button>
+<button type="button" onclick="cancelSingle(${item.id})" class="bg-rose-600 hover:bg-rose-700 text-white px-2 py-1 rounded transition text-[11px]">
+                                     İptal Et
+</button>
+</div>
                          `;
                          listDiv.appendChild(row);
                      });
@@ -912,6 +921,27 @@ async def index():
                  alertBox.innerText = "Bağlantı hatası oluştu.";
                  alertBox.classList.remove("hidden");
                  alertBox.classList.add("bg-rose-100", "text-rose-800", "border", "border-rose-300");
+             }
+         }
+         async function cancelSingle(id) {
+             if (!confirm("Seçilen günün rezervasyonunu tamamen iptal etmek istediğinize emin misiniz?")) return;
+             const formData = new FormData();
+             formData.append("id", id);
+             try {
+                 const res = await fetch("/api/cancel-single-reservation", {
+                     method: "POST",
+                     body: formData
+                 });
+                 if (res.ok) {
+                     alert("Rezervasyon başarıyla iptal edildi.");
+                     cancelDateChangeMode();
+                     document.getElementById("cancelForm").requestSubmit();
+                     loadAllAvailability();
+                 } else {
+                     alert("İptal sırasında bir hata oluştu.");
+                 }
+             } catch (e) {
+                 alert("Bağlantı hatası oluştu.");
              }
          }
          function initChange(id, currentDate, currentLoc) {
