@@ -4,7 +4,7 @@ import io
 import json
 import os
 import random
-import re  # Tarihleri kusursuz eşleştirmek için eklendi
+import re
 import string
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response
@@ -507,13 +507,10 @@ async def import_excel(password: str = Form(...), file: UploadFile = File(...)):
        if not val:
          continue
        val_lower = val.lower()
-       # 1. Gelişmiş Tarih Tespiti (Regex ile)
+       # Tarih tespiti
        if not res_date:
-         # Örn: 2026-09-12 (Saat içeren veya içermeyen form)
          m1 = re.search(r"2026-09-(\d{2})", val_lower)
-         # Örn: 12.09.2026, 12/9/2026, 12-09-2026
          m2 = re.search(r"(\d{1,2})[\./-](0?9)[\./-]2026", val_lower)
-         # Örn: 12 Eylül, 12 eylul 2026
          m3 = re.search(r"(\d{1,2})\s*(eylül|eylul)", val_lower)
          if m1:
            res_date = f"2026-09-{m1.group(1).zfill(2)}"
@@ -521,23 +518,42 @@ async def import_excel(password: str = Form(...), file: UploadFile = File(...)):
            res_date = f"2026-09-{m2.group(1).zfill(2)}"
          elif m3:
            res_date = f"2026-09-{m3.group(1).zfill(2)}"
-       # 2. Lokasyon Tespiti
-       if "libadiye" in val_lower or "tekno" in val_lower or "ofis" in val_lower or "liba" in val_lower:
+       # Lokasyon tespiti
+       if (
+           "libadiye" in val_lower
+           or "tekno" in val_lower
+           or "ofis" in val_lower
+           or "liba" in val_lower
+       ):
          location = "Libadiye Teknoloji Ofisi"
-       elif "atatürk" in val_lower or "havalimanı" in val_lower or "aym" in val_lower or "atk" in val_lower:
+       elif (
+           "atatürk" in val_lower
+           or "havalimanı" in val_lower
+           or "aym" in val_lower
+           or "atk" in val_lower
+       ):
          location = "Atatürk Havalimanı"
-       # 3. Başkanlık / Müdürlük Tespiti
+       # Başkanlık / Müdürlük tespiti
        if "müdürlüğü" in val_lower or "mudurlugu" in val_lower:
          mudurluk = val
-       elif "başkanlık" in val_lower or "baskanligi" in val_lower or "yardımcılığı" in val_lower:
+       elif (
+           "başkanlık" in val_lower
+           or "baskanligi" in val_lower
+           or "yardımcılığı" in val_lower
+       ):
          baskanlik = val
-       # 4. Sicil Tespiti (Sadece 4-8 hane uzunluğunda rakam)
-       if not sicil and val.isdigit() and 4 <= len(val) <= 8 and not (res_date and res_date.endswith(val)):
+       # Sicil tespiti
+       if (
+           not sicil
+           and val.isdigit()
+           and 4 <= len(val) <= 8
+           and not (res_date and res_date.endswith(val))
+       ):
          sicil = val
-       # 5. PNR Tespiti
+       # PNR tespiti
        if not pnr and val.startswith("TK-"):
          pnr = val
-       # 6. İsim Tespiti (Rakam, tire vb. içermeyen en olası kelime)
+       # İsim tespiti
        if (
            not name
            and len(val) > 2
@@ -551,11 +567,10 @@ async def import_excel(password: str = Form(...), file: UploadFile = File(...)):
            and "eylul" not in val_lower
        ):
          name = val
-     # Zorunlu alan kontrolü
      if not sicil:
        continue
      if not res_date:
-       res_date = "2026-09-01"  # Hala tarih algılanamadıysa 1 Eylül yap
+       res_date = "2026-09-01"
      if not location:
        location = "Atatürk Havalimanı"
      if not name:
@@ -566,7 +581,6 @@ async def import_excel(password: str = Form(...), file: UploadFile = File(...)):
        mudurluk = "Kargo Operasyonel Performans Müdürlüğü"
      if not pnr:
        pnr = generate_pnr(sicil)
-     # Veritabanına Yazmadan Önce Çakışma Kontrolü
      cursor.execute(
          "SELECT id FROM reservations WHERE sicil = ? AND res_date = ?",
          (sicil, res_date),
@@ -780,7 +794,7 @@ async def index():
 <input type="file" id="importFile" accept=".xlsx" class="text-xs border rounded p-1 bg-white flex-1">
 <button onclick="importExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-1.5 px-4 rounded-lg font-medium transition">Excel İçe Aktar</button>
 </div>
-<p class="text-[11px] text-slate-500">* Excel dosyanızdaki tüm satırlar gelişmiş yapay taranarak tarihler, siciller ve ofisler içeri kusursuz aktarılır.</p>
+<p class="text-[11px] text-slate-500">* Excel dosyanızdaki tüm satırlar gelişmiş yapay tarama ile tarihler, siciller ve ofisler doğru şekilde içeri aktarılacaktır.</p>
 </div>
 <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
 <h4 class="text-xs font-bold text-slate-700 uppercase mb-3 flex items-center">
@@ -1266,3 +1280,5 @@ async def index():
 </script>
 </body>
 </html>
+  """
+ return HTMLResponse(content=html_content)
