@@ -101,10 +101,11 @@ async def get_all_availability():
  custom_caps = {}
  for loc, d, cap in cursor.fetchall():
    custom_caps[(loc, d)] = cap
+ # Rezervasyonları net olarak gruplayıp sayalım
  cursor.execute("SELECT location, res_date, COUNT(*) FROM reservations GROUP BY location, res_date")
  booked_counts = {}
  for loc, d, cnt in cursor.fetchall():
-   booked_counts[(loc, d)] = cnt
+   booked_counts[(loc.strip().lower(), d.strip())] = cnt
  conn.close()
  result = {}
  locations = ["Atatürk Havalimanı", "Libadiye Teknoloji Ofisi"]
@@ -114,7 +115,7 @@ async def get_all_availability():
    for week_name, days in SEPTEMBER_2026_WEEKS.items():
      for d in days:
        cap = custom_caps.get((loc, d), default_cap)
-       booked = booked_counts.get((loc, d), 0)
+       booked = booked_counts.get((loc.lower(), d), 0)
        result[loc][d] = {
            "capacity": cap,
            "booked": booked,
@@ -475,39 +476,109 @@ async def import_excel(password: str = Form(...), file: UploadFile = File(...)):
    contents = await file.read()
    wb = openpyxl.load_workbook(filename=io.BytesIO(contents))
    sheet = wb.active
+   # Başlıkları okuyarak sütun indislerini dinamik tespit edelim (Kırılım hatasını önlemek için)
+   header_row = [
+       str(cell.value).strip().lower()
+       for cell in sheet[1]
+       if cell.value is not None
+   ]
+   def find_col_index(possible_keywords):
+     for idx, h in enumerate(header_row):
+       for kw in possible_keywords:
+         if kw in h:
+           return idx
+     return -1
+   # Sütun eşleşmeleri
+   idx_pnr = find_col_index(["pnr", "kod"])
+   idx_sicil = find_col_index(["sicil"])
+   idx_name = find_col_index(["ad", "soyad", "isim"])
+   idx_baskanlik = find_col_index(["başkanlık", "baskanlik"])
+   idx_mudurluk = find_col_index(["müdürlük", "mudurluk"])
+   idx_location = find_col_index(["lokasyon", "ofis", "yer"])
+   idx_date = find_col_index(["tarih", "gün", "date"])
    conn = get_db()
    cursor = conn.cursor()
    imported_count = 0
-   # İlk satırı başlık kabul edip 2. satırdan okumaya başlayalım
+   # Satır bazlı tarama (2. satırdan başlar)
    for row in sheet.iter_rows(min_row=2, values_only=True):
      if not row or all(cell is None for cell in row):
        continue
-     # Hücreleri stringe çevirerek güvenle alalım
      row_vals = [str(cell).strip() if cell is not None else "" for cell in row]
-     if len(row_vals) < 7:
-       continue
-     # Sütun yapısı kontrolü (ID varsa 8 sütun, yoksa 7 sütun olabilir)
-     if row_vals[0].isdigit() and len(row_vals) >= 8:
-       pnr = row_vals[1]
-       sicil = row_vals[2]
-       name = row_vals[3]
-       baskanlik = row_vals[4]
-       mudurluk = row_vals[5]
-       location = row_vals[6]
-       res_date = row_vals[7]
+     # Eğer başlıklar dinamik bulunamazsa standart sıralamaya göre fallback yap
+     if (
+         idx_sicil == -1
+         or idx_name == -1
+         or idx_baskanlik == -1
+         or idx_mudurluk == -1
+         or idx_location == -1
+         or idx_date == -1
+     ):
+       # Varsayılan standart export sıralaması: [ID, PNR, Sicil, AdSoyad, Baskanlik, Mudurluk, Lokasyon, Tarih]
+       if len(row_vals) >= 8 and row_vals[0].isdigit():
+         pnr, sicil, name, baskanlik, mudurluk, location, res_date = (
+             row_vals[1],
+             row_vals[2],
+             row_vals[3],
+             row_vals[4],
+             row_vals[5],
+             row_vals[6],
+             row_vals[7],
+         )
+       elif len(row_vals) >= 7:
+         pnr, sicil, name, baskanlik, mudurluk, location, res_date = (
+             row_vals[0],
+             row_vals[1],
+             row_vals[2],
+             row_vals[3],
+             row_vals[4],
+             row_vals[5],
+             row_vals[6],
+         )
+       else:
+         continue
      else:
-       pnr = row_vals[0]
-       sicil = row_vals[1]
-       name = row_vals[2]
-       baskanlik = row_vals[3]
-       mudurluk = row_vals[4]
-       location = row_vals[5]
-       res_date = row_vals[6]
+       pnr = row_vals[idx_pnr] if idx_pnr != -1 and idx_pnr < len(row_vals) else ""
+       sicil = (
+           row_vals[idx_sicil]
+           if idx_sicil != -1 and idx_sicil < len(row_vals)
+           else ""
+       )
+       name = (
+           row_vals[idx_name]
+           if idx_name != -1 and idx_name < len(row_vals)
+           else ""
+       )
+       baskanlik = (
+           row_vals[idx_baskanlik]
+           if idx_baskanlik != -1 and idx_baskanlik < len(row_vals)
+           else ""
+       )
+       mudurluk = (
+           row_vals[idx_mudurluk]
+           if idx_mudurluk != -1 and idx_mudurluk < len(row_vals)
+           else ""
+       )
+       location = (
+           row_vals[idx_location]
+           if idx_location != -1 and idx_location < len(row_vals)
+           else ""
+       )
+       res_date = (
+           row_vals[idx_date]
+           if idx_date != -1 and idx_date < len(row_vals)
+           else ""
+       )
      if not sicil or not res_date:
        continue
+     # Lokasyon adını normalize et (Libadiye veya Atatürk Havalimanı uyumu için anahtar kelime eşleştirme)
+     loc_lower = location.lower()
+     if "libadiye" in loc_lower or "tekno" in loc_lower:
+       location = "Libadiye Teknoloji Ofisi"
+     elif "atatürk" in loc_lower or "havalimanı" in loc_lower or "aym" in loc_lower or "atk" in loc_lower:
+       location = "Atatürk Havalimanı"
      if not pnr or not pnr.startswith("TK-"):
        pnr = generate_pnr(sicil)
-     # Mükerrer kayıt kontrolü (Aynı sicil aynı gün kayıtlı mı)
+     # Mükerrer kayıt kontrolü (Aynı sicil aynı tarihte kayıtlı mı)
      cursor.execute(
          "SELECT id FROM reservations WHERE sicil = ? AND res_date = ?",
          (sicil, res_date),
@@ -525,8 +596,8 @@ async def import_excel(password: str = Form(...), file: UploadFile = File(...)):
    return JSONResponse(
        content={
            "message": (
-               f"Başarıyla {imported_count} adet rezervasyon Excel dosyasından"
-               " içe aktarıldı ve kontenjanlar güncellendi!"
+               f"Başarıyla {imported_count} adet rezervasyon içe aktarıldı ve"
+               " kontenjan doluluk oranlarına yansıtıldı!"
            )
        }
    )
@@ -535,8 +606,8 @@ async def import_excel(password: str = Form(...), file: UploadFile = File(...)):
        status_code=400,
        content={
            "message": (
-               "Excel dosyası okunurken hata oluştu. Lütfen geçerli bir .xlsx"
-               f" yüklediğinizden emin olun. Detay: {str(e)}"
+               "Excel dosyası işlenirken hata oluştu. Lütfen sütun adlarını ve"
+               f" formatı kontrol edin. Detay: {str(e)}"
            )
        },
    )
@@ -724,7 +795,7 @@ async def index():
 <input type="file" id="importFile" accept=".xlsx" class="text-xs border rounded p-1 bg-white flex-1">
 <button onclick="importExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-1.5 px-4 rounded-lg font-medium transition">Excel İçe Aktar</button>
 </div>
-<p class="text-[11px] text-slate-500">* Daha önce indirdiğiniz Excel (.xlsx) formatındaki listeyi yükleyerek tüm kontenjanları ve geçmiş rezervasyonları anında senkronize edebilirsiniz.</p>
+<p class="text-[11px] text-slate-500">* Yüklediğiniz Excel dosyasındaki sicil, başkanlık, müdürlük, lokasyon ve tarih sütunları akıllı eşleştirme ile taranarak kontenjanlardan anında düşülecektir.</p>
 </div>
 <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
 <h4 class="text-xs font-bold text-slate-700 uppercase mb-3 flex items-center">
