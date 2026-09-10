@@ -11,7 +11,6 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 import openpyxl
 import sqlite3
 app = FastAPI(title="Uydu Ofis Rezervasyon Portalı")
-# Railway kalıcı disk (Volume) yolu (/data), yoksa yerel kullanıcı dizini
 PERSISTENT_DIR = (
    "/data" if os.path.exists("/data") else os.path.expanduser("~")
 )
@@ -21,7 +20,6 @@ DEFAULT_CAPACITIES = {
    "Atatürk Havalimanı": 20,
    "Libadiye Teknoloji Ofisi": 30,
 }
-# Eylül 2026 Çalışma Haftaları (Pazartesi - Cuma)
 SEPTEMBER_2026_WEEKS = {
    "1. Hafta (1 - 4 Eylül)": [
        "2026-09-01",
@@ -93,7 +91,6 @@ def get_db():
  conn.execute("PRAGMA journal_mode=WAL;")
  return conn
 
-# ----------------- API ENDPOINTS -----------------
 @app.get("/api/all-availability")
 async def get_all_availability():
  conn = get_db()
@@ -482,124 +479,83 @@ async def import_excel(password: str = Form(...), file: UploadFile = File(...)):
    conn = get_db()
    cursor = conn.cursor()
    imported_count = 0
-   for row in sheet.iter_rows(min_row=1, values_only=True):
+   # Başlık satırını atlayarak veri satırlarını tarıyoruz (min_row=2)
+   for row in sheet.iter_rows(min_row=2, values_only=True):
      if not row or all(cell is None for cell in row):
        continue
-     row_vals = []
-     for cell in row:
-       if cell is None:
-         row_vals.append("")
-       elif isinstance(cell, datetime):
-         row_vals.append(cell.strftime("%Y-%m-%d"))
-       else:
-         row_vals.append(str(cell).strip())
-     joined_str = " ".join(row_vals).lower()
-     if "sicil" in joined_str and "ad" in joined_str:
+     # Her hücreyi birleştirip satırdaki tarih/ofis seçimlerini toplu arıyoruz
+     row_full_text = " ".join([str(c) for c in row if c is not None])
+     # Hücrelerdeki "DD.MM.YYYY Gün (Ofis Adı)" kalıplarını regex ile tek tek ayıklıyoruz
+     # Örn: 01.09.2026 Salı (Atatürk Havalimanı) veya 04.09.2026 Cuma (Libadiye Teknoloji Ofisi)
+     matches = re.findall(
+         r"(\d{2}\.\d{2}\.\d{4})\s+[^\(\)]+\(([^)]+)\)", row_full_text
+     )
+     if not matches:
        continue
-     pnr = ""
-     sicil = ""
-     name = ""
-     baskanlik = ""
-     mudurluk = ""
-     location = ""
-     res_date = ""
-     for val in row_vals:
-       if not val:
+     # Bu satırdaki kişiye ait varsayılan bilgiler (Eğer sicil/isim ayrı sütunlarda değilse metinden türetiyoruz)
+     sicil = f"99{random.randint(1000,9999)}"
+     name = "Personel"
+     baskanlik = "Kargo Operasyon Başkanlığı"
+     mudurluk = "KARGO OPERASYONEL PERFORMANS MD."
+     # Satır hücrelerinde sicil veya isim geçiyorsa yakalayalım
+     for cell in row:
+       if cell is not None:
+         val_str = str(cell).strip()
+         if val_str.isdigit() and 4 <= len(val_str) <= 8:
+           sicil = val_str
+         elif (
+             len(val_str) > 3
+             and not "@" in val_str
+             and not "(" in val_str
+             and not "Hafta" in val_str
+         ):
+           if not any(
+               char.isdigit() for char in val_str
+           ):  # Rakam içermeyen ad soyad
+             name = val_str
+     pnr = generate_pnr(sicil)
+     # Bulunan her tarih ve ofis ikilisi için rezervasyon ekle
+     for date_str, loc_raw in matches:
+       # Tarih formatını YYYY-MM-DD formata çevir
+       try:
+         dt_obj = datetime.strptime(date_str, "%d.%m.%Y")
+         res_date = dt_obj.strftime("%Y-%m-%d")
+       except:
          continue
-       val_lower = val.lower()
-       # Tarih tespiti
-       if not res_date:
-         m1 = re.search(r"2026-09-(\d{2})", val_lower)
-         m2 = re.search(r"(\d{1,2})[\./-](0?9)[\./-]2026", val_lower)
-         m3 = re.search(r"(\d{1,2})\s*(eylül|eylul)", val_lower)
-         if m1:
-           res_date = f"2026-09-{m1.group(1).zfill(2)}"
-         elif m2:
-           res_date = f"2026-09-{m2.group(1).zfill(2)}"
-         elif m3:
-           res_date = f"2026-09-{m3.group(1).zfill(2)}"
-       # Lokasyon tespiti
+       # Eylül 2026 dışındaysa atla
+       if not res_date.startswith("2026-09-"):
+         continue
+       # Lokasyon eşleştirme
+       loc_lower = loc_raw.lower()
        if (
-           "libadiye" in val_lower
-           or "tekno" in val_lower
-           or "ofis" in val_lower
-           or "liba" in val_lower
+           "libadiye" in loc_lower
+           or "tekno" in loc_lower
+           or "ofis" in loc_lower
+           or "liba" in loc_lower
        ):
          location = "Libadiye Teknoloji Ofisi"
-       elif (
-           "atatürk" in val_lower
-           or "havalimanı" in val_lower
-           or "aym" in val_lower
-           or "atk" in val_lower
-       ):
+       else:
          location = "Atatürk Havalimanı"
-       # Başkanlık / Müdürlük tespiti
-       if "müdürlüğü" in val_lower or "mudurlugu" in val_lower:
-         mudurluk = val
-       elif (
-           "başkanlık" in val_lower
-           or "baskanligi" in val_lower
-           or "yardımcılığı" in val_lower
-       ):
-         baskanlik = val
-       # Sicil tespiti
-       if (
-           not sicil
-           and val.isdigit()
-           and 4 <= len(val) <= 8
-           and not (res_date and res_date.endswith(val))
-       ):
-         sicil = val
-       # PNR tespiti
-       if not pnr and val.startswith("TK-"):
-         pnr = val
-       # İsim tespiti
-       if (
-           not name
-           and len(val) > 2
-           and not re.search(r"\d", val)
-           and "@" not in val
-           and "başkanlık" not in val_lower
-           and "müdürlüğü" not in val_lower
-           and "libadiye" not in val_lower
-           and "atatürk" not in val_lower
-           and "eylül" not in val_lower
-           and "eylul" not in val_lower
-       ):
-         name = val
-     if not sicil:
-       continue
-     if not res_date:
-       res_date = "2026-09-01"
-     if not location:
-       location = "Atatürk Havalimanı"
-     if not name:
-       name = f"Personel {sicil}"
-     if not baskanlik:
-       baskanlik = "Kargo Operasyon Başkanlığı"
-     if not mudurluk:
-       mudurluk = "KARGO OPERASYONEL PERFORMANS MD."
-     if not pnr:
-       pnr = generate_pnr(sicil)
-     cursor.execute(
-         "SELECT id FROM reservations WHERE sicil = ? AND res_date = ?",
-         (sicil, res_date),
-     )
-     if cursor.fetchone():
-       continue
-     cursor.execute(
-         "INSERT INTO reservations (pnr, sicil, name, baskanlik, mudurluk,"
-         " location, res_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
-         (pnr, sicil, name, baskanlik, mudurluk, location, res_date),
-     )
-     imported_count += 1
+       # Aynı kişi aynı tarihe mükerrer kayıt eklenmesin
+       cursor.execute(
+           "SELECT id FROM reservations WHERE sicil = ? AND res_date = ?",
+           (sicil, res_date),
+       )
+       if cursor.fetchone():
+         continue
+       cursor.execute(
+           "INSERT INTO reservations (pnr, sicil, name, baskanlik, mudurluk,"
+           " location, res_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
+           (pnr, sicil, name, baskanlik, mudurluk, location, res_date),
+       )
+       imported_count += 1
    conn.commit()
    conn.close()
    return JSONResponse(
        content={
            "message": (
-               f"Başarıyla {imported_count} adet rezervasyon içe aktarıldı ve"
-               " kontenjanlara yansıtıldı!"
+               f"Başarıyla {imported_count} adet rezervasyon günleri taranıp"
+               " içeri aktarıldı!"
            )
        }
    )
@@ -824,13 +780,13 @@ async def index():
 <div id="adminContent" class="hidden space-y-6">
 <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
 <h4 class="text-xs font-bold text-slate-700 uppercase flex items-center">
-<i class="fa-solid fa-file-excel text-emerald-600 mr-2"></i> Eski Rezervasyonları İçe Aktar (Excel - .xlsx)
+<i class="fa-solid fa-file-excel text-emerald-600 mr-2"></i> Haftalık Çoklu Sütun Verilerini İçe Aktar (Excel - .xlsx)
 </h4>
 <div class="flex items-center space-x-3">
 <input type="file" id="importFile" accept=".xlsx" class="text-xs border rounded p-1 bg-white flex-1">
 <button onclick="importExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-1.5 px-4 rounded-lg font-medium transition">Excel İçe Aktar</button>
 </div>
-<p class="text-[11px] text-slate-500">* Excel dosyanızdaki tüm satırlar taranarak tüm tarihlere ait kontenjanlar doğru şekilde güncellenecektir.</p>
+<p class="text-[11px] text-slate-500">* Hücre içindeki tüm tarih ve ofis parantezleri (örn: 01.09.2026 Salı (Atatürk Havalimanı)) otomatik ayrıştırılıp ekilenecektir.</p>
 </div>
 <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
 <h4 class="text-xs font-bold text-slate-700 uppercase mb-3 flex items-center">
@@ -1296,5 +1252,3 @@ async def index():
 </script>
 </body>
 </html>
-  """
- return HTMLResponse(content=html_content)
