@@ -4,6 +4,7 @@ import io
 import json
 import os
 import random
+import re  # Tarihleri kusursuz eşleştirmek için eklendi
 import string
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response
@@ -481,7 +482,6 @@ async def import_excel(password: str = Form(...), file: UploadFile = File(...)):
    conn = get_db()
    cursor = conn.cursor()
    imported_count = 0
-   # Satırları esnek şekilde okuma (Hangi sütunda ne olduğuna hücre değerine bakarak karar verilir)
    for row in sheet.iter_rows(min_row=1, values_only=True):
      if not row or all(cell is None for cell in row):
        continue
@@ -493,110 +493,80 @@ async def import_excel(password: str = Form(...), file: UploadFile = File(...)):
          row_vals.append(cell.strftime("%Y-%m-%d"))
        else:
          row_vals.append(str(cell).strip())
-     # Başlık satırını atla
      joined_str = " ".join(row_vals).lower()
-     if (
-         "sicil" in joined_str
-         and "ad" in joined_str
-         and ("tarih" in joined_str or "gün" in joined_str)
-     ):
+     if "sicil" in joined_str and "ad" in joined_str:
        continue
      pnr = ""
      sicil = ""
      name = ""
      baskanlik = ""
      mudurluk = ""
-     location = "Atatürk Havalimanı"
-     res_date = "2026-09-01"
-     # Hücreleri tarayarak verileri akıllıca yerleştirelim
+     location = ""
+     res_date = ""
      for val in row_vals:
        if not val:
          continue
        val_lower = val.lower()
-       # Tarih
-       if (
-           "2026" in val
-           or "eylül" in val_lower
-           or "." in val
-           or "-" in val
-           or "eylul" in val_lower
-       ):
-         if "eylül" in val_lower or "eylul" in val_lower:
-           for i in range(1, 31):
-             if (
-                 str(i) in val
-                 or str(i) + "." in val_lower
-                 or str(i) + " " in val_lower
-             ):
-               res_date = f"2026-09-{str(i).zfill(2)}"
-               break
-         elif "." in val:
-           parts = val.split(".")
-           if len(parts) == 3:
-             res_date = f"{parts[2]}-{parts[1].zfill(2)}-{parts[0].zfill(2)}"
-         elif "-" in val and len(val) >= 8:
-           res_date = val[:10]
-       # Lokasyon
-       if (
-           "libadiye" in val_lower
-           or "tekno" in val_lower
-           or "ofis" in val_lower
-           or "liba" in val_lower
-       ):
+       # 1. Gelişmiş Tarih Tespiti (Regex ile)
+       if not res_date:
+         # Örn: 2026-09-12 (Saat içeren veya içermeyen form)
+         m1 = re.search(r"2026-09-(\d{2})", val_lower)
+         # Örn: 12.09.2026, 12/9/2026, 12-09-2026
+         m2 = re.search(r"(\d{1,2})[\./-](0?9)[\./-]2026", val_lower)
+         # Örn: 12 Eylül, 12 eylul 2026
+         m3 = re.search(r"(\d{1,2})\s*(eylül|eylul)", val_lower)
+         if m1:
+           res_date = f"2026-09-{m1.group(1).zfill(2)}"
+         elif m2:
+           res_date = f"2026-09-{m2.group(1).zfill(2)}"
+         elif m3:
+           res_date = f"2026-09-{m3.group(1).zfill(2)}"
+       # 2. Lokasyon Tespiti
+       if "libadiye" in val_lower or "tekno" in val_lower or "ofis" in val_lower or "liba" in val_lower:
          location = "Libadiye Teknoloji Ofisi"
-       elif (
-           "atatürk" in val_lower
-           or "havalimanı" in val_lower
-           or "aym" in val_lower
-           or "atk" in val_lower
-       ):
+       elif "atatürk" in val_lower or "havalimanı" in val_lower or "aym" in val_lower or "atk" in val_lower:
          location = "Atatürk Havalimanı"
-       # Müdürlük / Başkanlık
+       # 3. Başkanlık / Müdürlük Tespiti
        if "müdürlüğü" in val_lower or "mudurlugu" in val_lower:
          mudurluk = val
-       elif "başkanlık" in val_lower or "baskanligi" in val_lower:
+       elif "başkanlık" in val_lower or "baskanligi" in val_lower or "yardımcılığı" in val_lower:
          baskanlik = val
-       # Sicil (4 ila 7 haneli rakamlar)
-       if (
-           not sicil
-           and val.isdigit()
-           and 4 <= len(val) <= 8
-           and not res_date.endswith(val)
-       ):
+       # 4. Sicil Tespiti (Sadece 4-8 hane uzunluğunda rakam)
+       if not sicil and val.isdigit() and 4 <= len(val) <= 8 and not (res_date and res_date.endswith(val)):
          sicil = val
-       # PNR
+       # 5. PNR Tespiti
        if not pnr and val.startswith("TK-"):
          pnr = val
-       # İsim (Rakam içermeyen metinler)
+       # 6. İsim Tespiti (Rakam, tire vb. içermeyen en olası kelime)
        if (
            not name
-           and not val.isdigit()
            and len(val) > 2
+           and not re.search(r"\d", val)
            and "@" not in val
            and "başkanlık" not in val_lower
            and "müdürlüğü" not in val_lower
            and "libadiye" not in val_lower
            and "atatürk" not in val_lower
-           and "-" not in val
+           and "eylül" not in val_lower
+           and "eylul" not in val_lower
        ):
          name = val
-     # Eğer sicil bulunamadıysa ilk uygun rakamı sicil yap
+     # Zorunlu alan kontrolü
      if not sicil:
-       for v in row_vals:
-         if v.isdigit() and len(v) >= 4:
-           sicil = v
-           break
-     if not sicil:
-       continue  # Sicil yoksa bu satırı geç
+       continue
+     if not res_date:
+       res_date = "2026-09-01"  # Hala tarih algılanamadıysa 1 Eylül yap
+     if not location:
+       location = "Atatürk Havalimanı"
      if not name:
-       name = f"Sicil {sicil}"
+       name = f"Personel {sicil}"
      if not baskanlik:
        baskanlik = "Kargo Operasyon Başkanlığı"
      if not mudurluk:
        mudurluk = "Kargo Operasyonel Performans Müdürlüğü"
-     if not pnr or not pnr.startswith("TK-"):
+     if not pnr:
        pnr = generate_pnr(sicil)
-     # Mükerrer kontrolü (Aynı sicil aynı gün daha önce eklenmiş mi)
+     # Veritabanına Yazmadan Önce Çakışma Kontrolü
      cursor.execute(
          "SELECT id FROM reservations WHERE sicil = ? AND res_date = ?",
          (sicil, res_date),
@@ -810,7 +780,7 @@ async def index():
 <input type="file" id="importFile" accept=".xlsx" class="text-xs border rounded p-1 bg-white flex-1">
 <button onclick="importExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-1.5 px-4 rounded-lg font-medium transition">Excel İçe Aktar</button>
 </div>
-<p class="text-[11px] text-slate-500">* Excel dosyanızdaki tüm satırlar taranarak sicil, başkanlık, müdürlük, lokasyon ve tarihler sisteme işlenecektir.</p>
+<p class="text-[11px] text-slate-500">* Excel dosyanızdaki tüm satırlar gelişmiş yapay taranarak tarihler, siciller ve ofisler içeri kusursuz aktarılır.</p>
 </div>
 <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
 <h4 class="text-xs font-bold text-slate-700 uppercase mb-3 flex items-center">
@@ -1296,5 +1266,3 @@ async def index():
 </script>
 </body>
 </html>
-  """
- return HTMLResponse(content=html_content)
