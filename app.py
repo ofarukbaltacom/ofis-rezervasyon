@@ -578,7 +578,7 @@ async def import_excel(password: str = Form(...), file: UploadFile = File(...)):
      if not baskanlik:
        baskanlik = "Kargo Operasyon Başkanlığı"
      if not mudurluk:
-       mudurluk = "Kargo Operasyonel Performans Müdürlüğü"
+       mudurluk = "KARGO OPERASYONEL PERFORMANS MD."
      if not pnr:
        pnr = generate_pnr(sicil)
      cursor.execute(
@@ -668,7 +668,7 @@ async def index():
 </div>
 <div>
 <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Başkanlık</label>
-<select id="baskanlik" onchange="updateMudurlukOptions()" required
+<select id="baskanlik" required
                          class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-sm bg-white">
 <option value="">Başkanlık Seçiniz</option>
 <option value="Kargo Operasyon Başkanlığı">Kargo Operasyon Başkanlığı</option>
@@ -682,7 +682,43 @@ async def index():
 <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Müdürlük</label>
 <select id="mudurluk" required
                          class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-sm bg-white">
-<option value="">Önce Başkanlık Seçiniz</option>
+<option value="">Müdürlük Seçiniz</option>
+<option value="KARGO HANDLING ANLAŞMALAR MD.">KARGO HANDLING ANLAŞMALAR MD.</option>
+<option value="KARGO OPERASYONEL PERFORMANS MD.">KARGO OPERASYONEL PERFORMANS MD.</option>
+<option value="KARGO UÇUŞ OPERASYON KONTROL MD.">KARGO UÇUŞ OPERASYON KONTROL MD.</option>
+<option value="KARGO GÜVENLİK MD.">KARGO GÜVENLİK MD.</option>
+<option value="KARGO OPERASYON PLANLAMA VE PROJELER MD.">KARGO OPERASYON PLANLAMA VE PROJELER MD.</option>
+<option value="KARGO HUB OPERASYONLARI MD.">KARGO HUB OPERASYONLARI MD.</option>
+<option value="KARGO TESİS,TEÇHİZAT VE LOJİSTİK MD.">KARGO TESİS,TEÇHİZAT VE LOJİSTİK MD.</option>
+<option value="KARGO HUB OPERASYONLARI NÖBETÇİ MD. (A)">KARGO HUB OPERASYONLARI NÖBETÇİ MD. (A)</option>
+<option value="KARGO HUB OPERASYONLARI NÖBETÇİ MD. (B)">KARGO HUB OPERASYONLARI NÖBETÇİ MD. (B)</option>
+<option value="KARGO HUB OPERASYONLARI NÖBETÇİ MD. (C)">KARGO HUB OPERASYONLARI NÖBETÇİ MD. (C)</option>
+<option value="KARGO HUB OPERASYONLARI NÖBETÇİ MD. (D)">KARGO HUB OPERASYONLARI NÖBETÇİ MD. (D)</option>
+<option value="GÜMRÜK MD.">GÜMRÜK MD.</option>
+<option value="KARGO APRON YÖNETİMİ MD.">KARGO APRON YÖNETİMİ MD.</option>
+<option value="ÖZEL KARGO VE OPERASYONEL HİZMETLER MD.">ÖZEL KARGO VE OPERASYONEL HİZMETLER MD.</option>
+<option value="KARGO ÜCRET MD.">KARGO ÜCRET MD.</option>
+<option value="KARGO GELİR OPTİMİZASYON MD. (1.BÖLGE)">KARGO GELİR OPTİMİZASYON MD. (1.BÖLGE)</option>
+<option value="KARGO GELİR OPTİMİZASYON MD. (2.BÖLGE)">KARGO GELİR OPTİMİZASYON MD. (2.BÖLGE)</option>
+<option value="KARGO GELİR YÖNETİMİ SİSTEMLERİ MD.">KARGO GELİR YÖNETİMİ SİSTEMLERİ MD.</option>
+<option value="KARGO NETWORK PLANLAMA MD.">KARGO NETWORK PLANLAMA MD.</option>
+<option value="KARGO NETWORK İŞ BİRLİKLERİ MD.">KARGO NETWORK İŞ BİRLİKLERİ MD.</option>
+<option value="KARGO TARİFE MD.">KARGO TARİFE MD.</option>
+<option value="KARGO SATIŞ MD. (İSTANBUL)">KARGO SATIŞ MD. (İSTANBUL)</option>
+<option value="KARGO MÜŞTERİ DENEYİMİ MD.">KARGO MÜŞTERİ DENEYİMİ MD.</option>
+<option value="KARGO KİLİT MÜŞTERİLER MD. (AVRUPA)">KARGO KİLİT MÜŞTERİLER MD. (AVRUPA)</option>
+<option value="KARGO KİLİT MÜŞTERİLER MD. (ASYA)">KARGO KİLİT MÜŞTERİLER MD. (ASYA)</option>
+<option value="KARGO KİLİT MÜŞTERİLER MD. (AMERİKA)">KARGO KİLİT MÜŞTERİLER MD. (AMERİKA)</option>
+<option value="KARGO UYUMLULUK VE STANDARDİZASYON MD.">KARGO UYUMLULUK VE STANDARDİZASYON MD.</option>
+<option value="KARGO TANITIM VE REKLAM MD.">KARGO TANITIM VE REKLAM MD.</option>
+<option value="KARGO GLOBAL SATIŞ KANALLARI MD.">KARGO GLOBAL SATIŞ KANALLARI MD.</option>
+<option value="SATIŞ GELİŞTİRME VE CHARTER MD.">SATIŞ GELİŞTİRME VE CHARTER MD.</option>
+<option value="ÖZEL KARGOLAR VE SAĞLIK ÜRÜNLERİ MD.">ÖZEL KARGOLAR VE SAĞLIK ÜRÜNLERİ MD.</option>
+<option value="KARGO ÜRÜN VE POSTA MD.">KARGO ÜRÜN VE POSTA MD.</option>
+<option value="KARGO DİJİTALLEŞME VE SÜREKLİ GELİŞİM MD.">KARGO DİJİTALLEŞME VE SÜREKLİ GELİŞİM MD.</option>
+<option value="KARGO STRATEJİK PLANLAMA VE İŞ ZEKASI MD.">KARGO STRATEJİK PLANLAMA VE İŞ ZEKASI MD.</option>
+<option value="KARGO ORGANİZASYONEL GELİŞİM MD.">KARGO ORGANİZASYONEL GELİŞİM MD.</option>
+<option value="SABİHA GÖKÇEN KARGO MD.">SABİHA GÖKÇEN KARGO MD.</option>
 </select>
 </div>
 <div class="flex items-start space-x-2 pt-2">
@@ -794,7 +830,7 @@ async def index():
 <input type="file" id="importFile" accept=".xlsx" class="text-xs border rounded p-1 bg-white flex-1">
 <button onclick="importExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-1.5 px-4 rounded-lg font-medium transition">Excel İçe Aktar</button>
 </div>
-<p class="text-[11px] text-slate-500">* Excel dosyanızdaki tüm satırlar gelişmiş yapay tarama ile tarihler, siciller ve ofisler doğru şekilde içeri aktarılacaktır.</p>
+<p class="text-[11px] text-slate-500">* Excel dosyanızdaki tüm satırlar taranarak tüm tarihlere ait kontenjanlar doğru şekilde güncellenecektir.</p>
 </div>
 <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
 <h4 class="text-xs font-bold text-slate-700 uppercase mb-3 flex items-center">
@@ -856,13 +892,6 @@ async def index():
              "5. Hafta (28 - 30 Eylül)": ["2026-09-28", "2026-09-29", "2026-09-30"]
          };
          const dayNames = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma"];
-         const mudurlukData = {
-             "Kargo Operasyon Başkanlığı": ["Kargo Handling Anlaşmaları Müdürlüğü", "Kargo Operasyonel Performans Müdürlüğü", "Kargo Uçuş Operasyon Kontrol Müdürlüğü", "Kargo Güvenlik Müdürlüğü", "Özel Kargo ve Operasyonel Hizmetler Müdürlüğü"],
-             "Kargo Satış Başkanlığı": ["Kargo Kurumsal Müşteriler Müdürlüğü", "Kargo Dijital Satış Müdürlüğü", "Kargo Bölge Müdürlüğü (İstanbul)", "Kargo Bölge Müdürlüğü (Anadolu)"],
-             "Kargo Pazarlama Başkanlığı": ["Kargo Ürün Geliştirme Müdürlüğü", "Kargo Pazarlama İletişimi Müdürlüğü"],
-             "Kargo Gelir Yönetimi ve Ürün Planlama Başkanlığı": ["Kargo Fiyatlandırma Müdürlüğü", "Kargo Kapasite Planlama Müdürlüğü"],
-             "Genel Müdür (Kargo) Yardımcılığı": ["Kargo Organizasyonel Gelişim Müdürlüğü", "Kargo İnsan Kaynakları Müdürlüğü"]
-         };
          function switchTab(tab) {
              const createBtn = document.getElementById("tabCreateBtn");
              const cancelBtn = document.getElementById("tabCancelBtn");
@@ -878,19 +907,6 @@ async def index():
                  createBtn.className = "pb-2 px-3 text-slate-500 hover:text-slate-800 flex items-center space-x-1.5 transition";
                  cancelContent.classList.remove("hidden");
                  createContent.classList.add("hidden");
-             }
-         }
-         function updateMudurlukOptions() {
-             const b = document.getElementById("baskanlik").value;
-             const m = document.getElementById("mudurluk");
-             m.innerHTML = '<option value="">Müdürlük Seçiniz</option>';
-             if (b && mudurlukData[b]) {
-                 mudurlukData[b].forEach(item => {
-                     const opt = document.createElement("option");
-                     opt.value = item;
-                     opt.innerText = item;
-                     m.appendChild(opt);
-                 });
              }
          }
          async function loadAllAvailability() {
@@ -1269,7 +1285,7 @@ async def index():
              formData.append("password", currentAdminPass);
              const res = await fetch("/api/admin/set-capacity", { method: "POST", body: formData });
              if (res.ok) {
-                 alert("Kontenjan başarıyla güncellendi.");
+                 alert("Kontenjanlar güncellendi.");
                  loadAllAvailability();
              }
          }
