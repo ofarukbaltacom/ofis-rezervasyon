@@ -9,8 +9,7 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 import sqlite3
 app = FastAPI(title="Uydu Ofis Rezervasyon Portalı")
-# Veritabanının sunucu yeniden başlatmalarında silinmemesi için kalıcı bir dizin kullanıyoruz
-# Sunucu ortamına göre kalıcı bir klasör (/tmp veya ana dizin)
+# Veritabanının yeniden başlatmalarda silinmemesi için kalıcı dizin ayarı
 PERSISTENT_DIR = os.path.expanduser("~")
 if not os.path.exists(PERSISTENT_DIR):
  PERSISTENT_DIR = "/tmp"
@@ -699,6 +698,7 @@ async def index():
              "4. Hafta (21 - 25 Eylül)": ["2026-09-21", "2026-09-22", "2026-09-23", "2026-09-24", "2026-09-25"],
              "5. Hafta (28 - 30 Eylül)": ["2026-09-28", "2026-09-29", "2026-09-30"]
          };
+         const dayNames = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma"];
          const mudurlukData = {
              "Kargo Operasyon Başkanlığı": ["Kargo Handling Anlaşmaları Müdürlüğü", "Kargo Operasyonel Performans Müdürlüğü", "Kargo Uçuş Operasyon Kontrol Müdürlüğü", "Kargo Güvenlik Müdürlüğü", "Özel Kargo ve Operasyonel Hizmetler Müdürlüğü"],
              "Kargo Satış Başkanlığı": ["Kargo Kurumsal Müşteriler Müdürlüğü", "Kargo Dijital Satış Müdürlüğü", "Kargo Bölge Müdürlüğü (İstanbul)", "Kargo Bölge Müdürlüğü (Anadolu)"],
@@ -741,6 +741,10 @@ async def index():
                  const res = await fetch("/api/all-availability");
                  globalAvailability = await res.json();
                  renderWeeks();
+                 // Eğer açık bir değiştirme ekranı varsa güncel kontenjanları orada da yenile
+                 if(!document.getElementById("changeDateContainer").classList.contains("hidden")) {
+                     updateChangeDateOptions();
+                 }
              } catch (e) {
                  console.error("Kontenjanlar yüklenemedi", e);
              }
@@ -748,14 +752,15 @@ async def index():
          function renderWeeks() {
              const container = document.getElementById("weeksContainer");
              container.innerHTML = "";
-             const dayNames = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma"];
              for (const [weekTitle, dates] of Object.entries(weeksData)) {
                  const weekBox = document.createElement("div");
                  weekBox.className = "border border-slate-200 rounded-xl p-4 bg-slate-50/50 space-y-3";
                  let daysHtml = "";
                  dates.forEach((dStr, idx) => {
                      const dateObj = new Date(dStr);
-                     const formattedDate = `${dateObj.getDate()} Eylül (${dayNames[idx] || 'İş Günü'})`;
+                     // Doğru gün adını bulmak için getDay() (Pazartesi=1, Salı=2...)
+                     const dayIdx = (dateObj.getDay() + 6) % 7;
+                     const formattedDate = `${dateObj.getDate()} Eylül (${dayNames[dayIdx] || 'İş Günü'})`;
                      const atkInfo = globalAvailability["Atatürk Havalimanı"]?.[dStr] || { remaining: 20 };
                      const atkKey = `Atatürk Havalimanı|${dStr}`;
                      const atkFull = atkInfo.remaining <= 0;
@@ -958,11 +963,12 @@ async def index():
          function updateChangeDateOptions() {
              const selectedLoc = document.getElementById("newLocSelect").value;
              const selectEl = document.getElementById("newDateSelect");
-             selectEl.innerHTML = '<option value="">Tarih Seçiniz</option>';
+             selectEl.innerHTML = '<option value="">Tarih ve Kontenjan Seçiniz</option>';
              const locData = globalAvailability[selectedLoc] || {};
              const otherDates = activeLookupData.filter(item => item.id !== selectedOldIdForChange).map(item => item.res_date);
              for (const [dateStr, info] of Object.entries(locData)) {
-                 if (info.remaining <= 0 || otherDates.includes(dateStr)) continue;
+                 const isFull = info.remaining <= 0;
+                 if (otherDates.includes(dateStr)) continue;
                  let weekKey = null;
                  for (const [wTitle, wDays] of Object.entries(weeksData)) {
                      if (wDays.includes(dateStr)) { weekKey = wTitle; break; }
@@ -972,9 +978,17 @@ async def index():
                      const countInWeek = otherDates.filter(d => daysInThisWeek.includes(d)).length;
                      if (countInWeek >= 2) continue;
                  }
+                 const dateObj = new Date(dateStr);
+                 const dayIdx = (dateObj.getDay() + 6) % 7;
+                 const formattedDate = `${dateObj.getDate()} Eylül (${dayNames[dayIdx] || 'İş Günü'})`;
                  const opt = document.createElement("option");
                  opt.value = dateStr;
-                 opt.innerText = `${dateStr} (${selectedLoc} - Boş: ${info.remaining})`;
+                 if (isFull) {
+                     opt.innerText = `${formattedDate} - [KONTENJAN DOLU]`;
+                     opt.disabled = true;
+                 } else {
+                     opt.innerText = `${formattedDate} (${info.remaining} Boş Kontenjan)`;
+                 }
                  selectEl.appendChild(opt);
              }
          }
