@@ -162,24 +162,42 @@ def outlook_auto_reply_worker():
    )
    return
  print(
-     "Outlook Otomatik Yanıt Arka Plan Servisi Başlatıldı (Sadece OMER FARUK"
-     " BALTA Test Modu)..."
+     "Outlook Otomatik Yanıt Arka Plan Servisi Başlatıldı (KOPS Kutusu ve"
+     " OMER FARUK BALTA Test Modu)..."
  )
  while True:
    try:
      outlook = win32com.client.Dispatch("Outlook.Application")
      namespace = outlook.GetNamespace("MAPI")
+     target_inbox = None
      target_account = None
      for account in outlook.Session.Accounts:
        if "kops@thy.com" in account.SmtpAddress.lower():
          target_account = account
          break
-     inbox = namespace.GetDefaultFolder(6)
-     messages = inbox.Items
+     for store in namespace.Stores:
+       if (
+           "kops@thy.com" in store.DisplayName.lower()
+           or (
+               target_account
+               and store.DisplayName.lower()
+               in target_account.DisplayName.lower()
+           )
+       ):
+         root_folder = store.GetRootFolder()
+         for folder in root_folder.Folders:
+           if folder.Name.lower() in ["gelen kutusu", "inbox"]:
+             target_inbox = folder
+             break
+         if target_inbox:
+           break
+     if not target_inbox:
+       target_inbox = namespace.GetDefaultFolder(6)
+     messages = target_inbox.Items
      messages.Sort("[ReceivedTime]", True)
      count = 0
      for message in messages:
-       if count > 5:
+       if count > 10:
          break
        count += 1
        sender_name = message.SenderName or ""
@@ -226,6 +244,11 @@ def outlook_auto_reply_worker():
                "[Auto-Reply Başarılı - KOPS (Test)]"
                f" {real_name} ({sender_name}) adlı çalışana PNR ({pnr})"
                " gönderildi."
+           )
+         else:
+           print(
+               f"[Auto-Reply] {sender_name} talep attı ancak DB'de eşleşen"
+               " rezervasyon bulunamadı."
            )
    except Exception as e:
      print(f"[Auto-Reply Hata] {e}")
