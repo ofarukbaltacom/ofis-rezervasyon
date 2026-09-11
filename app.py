@@ -14,7 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 import openpyxl
 import sqlite3
 import uvicorn
-# Windows dışındaki ortamlarda (Railway/Linux) çökmemesi için güvenli içe aktarma
+# Windows dışındaki ortamlarda çökmemesi için güvenli içe aktarma
 WIN32_AVAILABLE = False
 if sys.platform == "win32":
  try:
@@ -158,20 +158,41 @@ def outlook_auto_reply_worker():
  if not WIN32_AVAILABLE:
    print(
        "Outlook Otomatik Yanıt Servisi sadece Windows ortamında"
-       " çalıştırılabilir (Linux sunucuda pasif)."
+       " çalıştırılabilir."
    )
    return
- print("Outlook Otomatik Yanıt Arka Plan Servisi Başlatıldı...")
+ print(
+     "Outlook Otomatik Yanıt Arka Plan Servisi Başlatıldı (Sadece OMER FARUK"
+     " BALTA Test Modu)..."
+ )
  while True:
    try:
      outlook = win32com.client.Dispatch("Outlook.Application")
      namespace = outlook.GetNamespace("MAPI")
+     target_account = None
+     for account in outlook.Session.Accounts:
+       if "kops@thy.com" in account.SmtpAddress.lower():
+         target_account = account
+         break
      inbox = namespace.GetDefaultFolder(6)
-     messages = inbox.Items.Restrict("[UnRead] = True")
+     messages = inbox.Items
+     messages.Sort("[ReceivedTime]", True)
+     count = 0
      for message in messages:
+       if count > 5:
+         break
+       count += 1
        sender_name = message.SenderName or ""
        subject = message.Subject or ""
        body = message.Body or ""
+       # TEST FİLTRESİ: Sadece OMER FARUK BALTA'dan gelen mailleri işleme al
+       normalized_sender = normalize_text(sender_name)
+       if (
+           "omer" not in normalized_sender
+           or "faruk" not in normalized_sender
+           or "balta" not in normalized_sender
+       ):
+         continue
        if is_office_reservation_request(subject, body):
          reservations = get_reservation_info_by_name(sender_name)
          if reservations:
@@ -185,6 +206,8 @@ def outlook_auto_reply_worker():
                f"Yanıt: {message.Subject} (Uydu Ofis Rezervasyon"
                " Bilgilendirmesi)"
            )
+           if target_account:
+             reply.SendUsingAccount = target_account
            reply.HTMLBody = (
                f"""
 <p>Merhaba <b>{real_name}</b>,</p>
@@ -200,12 +223,13 @@ def outlook_auto_reply_worker():
            )
            reply.Send()
            print(
-               f"[Auto-Reply] {real_name} ({sender_name}) adlı çalışana PNR"
-               f" ({pnr}) bilgisi gönderildi."
+               "[Auto-Reply Başarılı - KOPS (Test)]"
+               f" {real_name} ({sender_name}) adlı çalışana PNR ({pnr})"
+               " gönderildi."
            )
    except Exception as e:
-     pass
-   time.sleep(60)
+     print(f"[Auto-Reply Hata] {e}")
+   time.sleep(30)
 
 # Arka plan thread'ini güvenli başlat
 threading.Thread(target=outlook_auto_reply_worker, daemon=True).start()
