@@ -5,6 +5,7 @@ import json
 import os
 import random
 import string
+import sys
 import threading
 import time
 import unicodedata
@@ -13,7 +14,14 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 import openpyxl
 import sqlite3
 import uvicorn
-import win32com.client
+# Windows dışındaki ortamlarda (Railway/Linux) çökmemesi için güvenli içe aktarma
+WIN32_AVAILABLE = False
+if sys.platform == "win32":
+ try:
+   import win32com.client
+   WIN32_AVAILABLE = True
+ except ImportError:
+   pass
 app = FastAPI(title="Uydu Ofis Rezervasyon Portalı")
 PERSISTENT_DIR = (
    "/data" if os.path.exists("/data") else os.path.expanduser("~")
@@ -98,7 +106,6 @@ def get_db():
 # ----------------- OUTLOOK OTOMATİK YANIT (AUTO-REPLY) SERVİSİ -----------------
 
 def normalize_text(text):
- """Büyük/küçük harf ve Türkçe karakterleri tamamen standart hale getirir (ÖMER -> omer)"""
  if not text:
    return ""
  text = text.replace("İ", "i").replace("I", "ı")
@@ -108,7 +115,6 @@ def normalize_text(text):
  return text.translate(tr_map).lower().strip()
 
 def get_reservation_info_by_name(sender_name):
- """Gönderenin adı büyük/küçük harf veya Türkçe karakter farkıyla gelse bile veritabanıyla eşleştirir"""
  conn = get_db()
  cursor = conn.cursor()
  cursor.execute("SELECT pnr, name, location, res_date FROM reservations")
@@ -125,7 +131,6 @@ def get_reservation_info_by_name(sender_name):
  return matched_rows
 
 def is_office_reservation_request(subject, body):
- """Mailin 'uydu ofis' veya rezervasyonla ilgili olup olmadığını denetler"""
  text = normalize_text(subject + " " + body)
  trigger_keywords = [
      "uydu ofis",
@@ -150,13 +155,18 @@ def is_office_reservation_request(subject, body):
  return any(kw in text for kw in trigger_keywords)
 
 def outlook_auto_reply_worker():
- """Arka planda çalışarak gelen mailleri tarar ve eşleşenlere PNR bilgisi döner"""
+ if not WIN32_AVAILABLE:
+   print(
+       "Outlook Otomatik Yanıt Servisi sadece Windows ortamında"
+       " çalıştırılabilir (Linux sunucuda pasif)."
+   )
+   return
  print("Outlook Otomatik Yanıt Arka Plan Servisi Başlatıldı...")
  while True:
    try:
      outlook = win32com.client.Dispatch("Outlook.Application")
      namespace = outlook.GetNamespace("MAPI")
-     inbox = namespace.GetDefaultFolder(6)  # Gelen Kutusu
+     inbox = namespace.GetDefaultFolder(6)
      messages = inbox.Items.Restrict("[UnRead] = True")
      for message in messages:
        sender_name = message.SenderName or ""
@@ -194,11 +204,10 @@ def outlook_auto_reply_worker():
                f" ({pnr}) bilgisi gönderildi."
            )
    except Exception as e:
-     # Outlook masaüstü uygulamasının kapalı olması vb. durumlarda çökmesini önler
      pass
-   time.sleep(60)  # Her 60 saniyede bir kontrol eder
+   time.sleep(60)
 
-# Arka plan thread'ini başlat (Uygulama ayağa kalkarken çalışır)
+# Arka plan thread'ini güvenli başlat
 threading.Thread(target=outlook_auto_reply_worker, daemon=True).start()
 
 # ----------------- API ENDPOINTS -----------------
