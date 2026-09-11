@@ -26,7 +26,7 @@
 <main class="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
 <section class="lg:col-span-1 bg-white rounded-xl shadow-md p-6 border border-slate-200 h-fit space-y-4 flex flex-col justify-between">
 <div>
-<!-- Sekmeler (3'e çıkarıldı: Rezervasyon Yap, Gün Değiştir / İptal, PNR Sorgula) -->
+<!-- Sekmeler -->
 <div class="flex border-b mb-4 text-xs font-semibold overflow-x-auto">
 <button onclick="switchTab('create')" id="tabCreateBtn" class="pb-2 px-2 text-red-600 border-b-2 border-red-600 flex items-center space-x-1 transition whitespace-nowrap font-bold">
 <i class="fa-regular fa-calendar-check"></i> <span>Rezervasyon Yap</span>
@@ -165,63 +165,10 @@
 <!-- 3. Sekme: PNR Unuttum / Bul -->
 <div id="tabFindPnrContent" class="hidden space-y-4">
 <form id="findPnrForm" onsubmit="handleFindPnr(event)" class="space-y-3">
-<p class="text-xs text-slate-500">PNR kodunuzu unuttuysanız sicil, başkanlık ve müdürlük bilgilerinizi girerek Eylül ayı kayıtlarınızı öğrenebilirsiniz.</p>
+<p class="text-xs text-slate-500">PNR kodunuzu unuttuysanız sicil numaranızı girerek Eylül ayı kayıtlarınızı öğrenebilirsiniz.</p>
 <div>
 <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Sicil No</label>
-<input type="text" id="find_sicil" required placeholder="Örn: 123456" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-sm">
-</div>
-<div>
-<label class="block text-xs font-bold text-slate-600 uppercase mb-1">Başkanlık</label>
-<select id="find_baskanlik" required class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-sm bg-white">
-<option value="">Başkanlık Seçiniz</option>
-<option value="Kargo Operasyon Başkanlığı">Kargo Operasyon Başkanlığı</option>
-<option value="Kargo Satış Başkanlığı">Kargo Satış Başkanlığı</option>
-<option value="Kargo Pazarlama Başkanlığı">Kargo Pazarlama Başkanlığı</option>
-<option value="Kargo Gelir Yönetimi ve Ürün Planlama Başkanlığı">Kargo Gelir Yönetimi ve Ürün Planlama Başkanlığı</option>
-<option value="Genel Müdür (Kargo) Yardımcılığı">Genel Müdür (Kargo) Yardımcılığı</option>
-</select>
-</div>
-<div>
-<label class="block text-xs font-bold text-slate-600 uppercase mb-1">Müdürlük</label>
-<select id="find_mudurluk" required class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-sm bg-white">
-<option value="">Müdürlük Seçiniz</option>
-<option value="KARGO HANDLING ANLAŞMALAR MD.">KARGO HANDLING ANLAŞMALAR MD.</option>
-<option value="KARGO OPERASYONEL PERFORMANS MD.">KARGO OPERASYONEL PERFORMANS MD.</option>
-<option value="KARGO UÇUŞ OPERASYON KONTROL MD.">KARGO UÇUŞ OPERASYON KONTROL MD.</option>
-<option value="KARGO GÜVENLİK MD.">KARGO GÜVENLİK MD.</option>
-<option value="KARGO OPERASYON PLANLAMA VE PROJELER MD.">KARGO OPERASYON PLANLAMA VE PROJELER MD.</option>
-<option value="KARGO HUB OPERASYONLARI MD.">KARGO HUB OPERASYONLARI MD.</option>
-<option value="KARGO TESİS,TEÇHİZAT VE LOJİSTİK MD.">KARGO TESİS,TEÇHİZAT VE LOJİSTİK MD.</option>
-<option value="KARGO HUB OPERASYONLARI NÖBETÇİ MD. (A)">KARGO HUB OPERASYONLARI NÖBETÇİ MD. (A)</option>
-<option value="KARGO HUB OPERASYONLARI NÖBETÇİ MD. (B)">KARGO HUB OPERASYONLARI NÖBETÇİ MD. (B)</option>
-<option value="KARGO HUB OPERASYONLARI NÖBETÇİ MD. (C)">KARGO HUB OPERASYONLARI NÖBETÇİ MD. (C)</option>
-<option value="KARGO HUB OPERASYONLARI NÖBETÇİ MD. (D)">KARGO HUB OPERASYONLARI NÖBETÇİ MD. (D)</option>
-<option value="GÜMRÜK MD.">GÜMRÜK MD.</option>
-<option value="KARGO APRON YÖNETİMİ MD.">KARGO APRON YÖNETİMİ MD.</option>
-<option value="ÖZEL KARGO VE OPERASYONEL HİZMETLER MD.">ÖZEL KARGO VE OPERASYONEL HİZMETLER MD.</option>
-<option value="KARGO ÜCRET MD.">KARGO ÜCRET MD.</option>
-<option value="KARGO GELİR OPTİMİZASYON MD. (1.BÖLGE)">KARGO GELİR OPTİMİZASYON MD. (1.BÖLGE)</option>
-<option value="KARGO GELİR OPTİMİZASYON MD. (2.BÖLGE)">KARGO GELİR OPTİMİZASYON MD. (2.BÖLGE)</option>
-<option value="KARGO GELİR YÖNETİMİ SİSTEMLERİ MD.">KARGO GELİR YÖNETİMİ SİSTEMLERİ MD.</option>
-<option value="KARGO NETWORK PLANLAMA MD.">KARGO NETWORK PLANLAMA MD.</option>
-<option value="KARGO NETWORK İŞ BİRLİKLERİ MD.">KARGO NETWORK İŞ BİRLİKLERİ MD.</option>
-<option value="KARGO TARİFE MD.">KARGO TARİFE MD.</option>
-<option value="KARGO SATIŞ MD. (İSTANBUL)">KARGO SATIŞ MD. (İSTANBUL)</option>
-<option value="KARGO MÜŞTERİ DENEYİMİ MD.">KARGO MÜŞTERİ DENEYİMİ MD.</option>
-<option value="KARGO KİLİT MÜŞTERİLER MD. (AVRUPA)">KARGO KİLİT MÜŞTERİLER MD. (AVRUPA)</option>
-<option value="KARGO KİLİT MÜŞTERİLER MD. (ASYA)">KARGO KİLİT MÜŞTERİLER MD. (ASYA)</option>
-<option value="KARGO KİLİT MÜŞTERİLER MD. (AMERİKA)">KARGO KİLİT MÜŞTERİLER MD. (AMERİKA)</option>
-<option value="KARGO UYUMLULUK VE STANDARDİZASYON MD.">KARGO UYUMLULUK VE STANDARDİZASYON MD.</option>
-<option value="KARGO TANITIM VE REKLAM MD.">KARGO TANITIM VE REKLAM MD.</option>
-<option value="KARGO GLOBAL SATIŞ KANALLARI MD.">KARGO GLOBAL SATIŞ KANALLARI MD.</option>
-<option value="SATIŞ GELİŞTİRME VE CHARTER MD.">SATIŞ GELİŞTİRME VE CHARTER MD.</option>
-<option value="ÖZEL KARGOLAR VE SAĞLIK ÜRÜNLERİ MD.">ÖZEL KARGOLAR VE SAĞLIK ÜRÜNLERİ MD.</option>
-<option value="KARGO ÜRÜN VE POSTA MD.">KARGO ÜRÜN VE POSTA MD.</option>
-<option value="KARGO DİJİTALLEŞME VE SÜREKLİ GELİŞİM MD.">KARGO DİJİTALLEŞME VE SÜREKLİ GELİŞİM MD.</option>
-<option value="KARGO STRATEJİK PLANLAMA VE İŞ ZEKASI MD.">KARGO STRATEJİK PLANLAMA VE İŞ ZEKASI MD.</option>
-<option value="KARGO ORGANİZASYONEL GELİŞİM MD.">KARGO ORGANİZASYONEL GELİŞİM MD.</option>
-<option value="SABİHA GÖKÇEN KARGO MD.">SABİHA GÖKÇEN KARGO MD.</option>
-</select>
+<input type="text" id="find_sicil" required placeholder="Örn: 110816" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-sm">
 </div>
 <button type="submit" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-medium py-2.5 px-4 rounded-lg transition duration-150 flex items-center justify-center space-x-2 text-sm shadow cursor-pointer">
 <i class="fa-solid fa-key"></i> <span>PNR Kodlarımı Göster</span>
@@ -537,22 +484,20 @@ async function handleFindPnr(event) {
    alertBox.className = "mt-2 hidden p-3 rounded-lg text-xs font-medium";
    alertBox.innerHTML = "";
    const sicil = document.getElementById("find_sicil").value.trim();
-   const baskanlik = document.getElementById("find_baskanlik").value;
-   const mudurluk = document.getElementById("find_mudurluk").value;
    try {
        const res = await fetch(`/api/admin/reservations?password=kogm2071&search=${encodeURIComponent(sicil)}`);
        if (!res.ok) throw new Error();
        const data = await res.json();
-       // Sicil, başkanlık ve müdürlük eşleşmesine göre filtrele
-       const matches = data.filter(r => r.sicil.trim() === sicil && r.baskanlik === baskanlik && r.mudurluk === mudurluk);
+       // Sadece sicil numarasına göre eşleşen kayıtları filtrele
+       const matches = data.filter(r => r.sicil.trim() === sicil);
        if (matches.length > 0) {
            const pnrCode = matches[0].pnr;
            let datesHtml = matches.map(m => `• ${m.res_date} (${m.location})`).join("<br>");
-           alertBox.innerHTML = `✅ <b>Kayıt Bulundu!</b><br><br>🔑 <b>PNR Kodunuz:</b> <span class="bg-white px-2 py-1 rounded border font-mono text-red-600 font-bold select-all">${pnrCode}</span><br><br><b>Rezerve Edilen Günler:</b><br>${datesHtml}`;
+           alertBox.innerHTML = `✅ <b>Kayıt Bulundu! (${matches[0].name})</b><br><br>🔑 <b>PNR Kodunuz:</b> <span class="bg-white px-2 py-1 rounded border font-mono text-red-600 font-bold select-all">${pnrCode}</span><br><br><b>Rezerve Edilen Günler:</b><br>${datesHtml}`;
            alertBox.classList.remove("hidden");
            alertBox.classList.add("bg-emerald-100", "text-emerald-800", "border", "border-emerald-300");
        } else {
-           alertBox.innerText = "Girilen bilgilere ait Eylül 2026'da aktif bir rezervasyon bulunamadı.";
+           alertBox.innerText = "Girilen sicil numarasına ait Eylül 2026'da aktif bir rezervasyon bulunamadı.";
            alertBox.classList.remove("hidden");
            alertBox.classList.add("bg-rose-100", "text-rose-800", "border", "border-rose-300");
        }
